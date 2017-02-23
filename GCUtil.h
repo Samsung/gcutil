@@ -32,6 +32,9 @@
 #error `PROFILE_MASSIF` can only be enabled in escargot shell
 #endif
 
+void registerGCAddress(void* address, size_t siz);
+void unregisterGCAddress(void* address);
+
 void* GC_malloc_hook(size_t siz);
 void* GC_malloc_atomic_hook(size_t siz);
 void* GC_generic_malloc_hook(size_t siz, int kind);

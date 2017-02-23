@@ -19,6 +19,11 @@
 
 #include "GCUtil.h"
 
+#ifdef PROFILE_MASSIF
+std::unordered_map<void*, void*> g_addressTable;
+std::vector<void*> g_freeList;
+#endif
+
 namespace GCUtil {
 
 template <class GC_Tp>
