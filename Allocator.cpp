@@ -18,6 +18,12 @@
 
 #ifdef PROFILE_MASSIF
 
+#include <unordered_map>
+#include <vector>
+
+std::unordered_map<void*, void*> g_addressTable;
+std::vector<void*> g_freeList;
+
 void unregisterGCAddress(void* address)
 {
     // ASSERT(g_addressTable.find(address) != g_addressTable.end());

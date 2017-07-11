@@ -28,10 +28,6 @@
 //#define PROFILE_MASSIF
 #ifdef PROFILE_MASSIF
 
-#ifndef ESCARGOT_SHELL
-#error `PROFILE_MASSIF` can only be enabled in escargot shell
-#endif
-
 void registerGCAddress(void* address, size_t siz);
 void unregisterGCAddress(void* address);
 
