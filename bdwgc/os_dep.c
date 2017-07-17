@@ -423,7 +423,7 @@ GC_INNER char * GC_get_maps(void)
 
   GC_INNER void GC_init_linux_data_start(void)
   {
-#if (defined(TIZEN_WEARABLE))
+#if (defined(TIZEN))
     GC_data_start = DATAEND;
     return;
 #endif
