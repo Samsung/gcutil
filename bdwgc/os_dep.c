@@ -2416,8 +2416,10 @@ GC_INNER void GC_unmap(ptr_t start, size_t bytes)
 #   else
         adv_result = madvise(start_addr, len, MADV_DONTNEED);
 #   endif
-        if (adv_result != 0)
-          ABORT("madvise failed");
+        if (adv_result != 0) {
+          // NOTE(sh8281.kim) madvise can fail on tizen
+          WARN("madvise failed", 0);
+        }
       }
       GC_unmapped_bytes += len;
 #   endif
