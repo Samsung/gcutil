@@ -876,7 +876,7 @@ GC_INNER mse * GC_mark_from(mse *mark_stack_top, mse *mark_stack,
 
 #ifdef ESCARGOT
 GC_API mse * GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr, mse *mark_stack_limit,
-                                     const GC_get_next_pointer_proc proc) {
+                                     GC_get_next_pointer_proc proc) {
     DECLARE_HDR_CACHE;
 
     INIT_HDR_CACHE;
@@ -899,7 +899,7 @@ GC_API mse * GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr
 }
 
 GC_API mse * GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr, mse *mark_stack_limit,
-                                        const GC_get_sub_pointer_proc proc,
+                                        GC_get_sub_pointer_proc proc,
                                         struct GC_mark_custom_result* arr, const int number_of_sub_pointer) {
     DECLARE_HDR_CACHE;
 
