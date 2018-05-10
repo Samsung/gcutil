@@ -275,7 +275,7 @@ inline void* operator new(size_t size, GC_NS_QUALIFY(GCPlacement) gcp,
                               GC_NS_QUALIFY(GCCleanUpFunc), void*);
 #endif
 
-#ifdef _MSC_VER
+#if defined(_MSC_VER) && !defined(ESCARGOT)
   // The following ensures that the system default operator new[] does not
   // get undefined, which is what seems to happen on VC++ 6 for some reason
   // if we define a multi-argument operator new[].

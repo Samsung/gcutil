@@ -598,8 +598,9 @@ void GC_print_free_list(int kind, size_t sz_in_granules)
  * But it won't be included in final binary if GC_dump_for_graph doesn't get called in escargot.
  * So adding '-fdata-sections -ffunction-sections' into CFLAG is necessary when building bdwgc
  */
-
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
 #include <sys/resource.h>
+#endif
 
 #if defined(NO_DEBUGGING)
 
@@ -703,6 +704,7 @@ GC_API void GC_CALL GC_dump_for_graph(const char* log_file_name,
 
     GC_apply_to_all_blocks(GC_gather_information_for_escargot, (word)&pstats);
 
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
     struct rusage ru;
     getrusage(RUSAGE_SELF, &ru);
     size_t peak_rss = ru.ru_maxrss;
@@ -722,6 +724,7 @@ GC_API void GC_CALL GC_dump_for_graph(const char* log_file_name,
                 phase_name);
         fclose(fp);
     }
+#endif
 }
 #endif // ESCARGOT
 
