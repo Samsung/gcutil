@@ -508,6 +508,11 @@ GC_INNER void GC_start_debugging(void)
 
 size_t GC_debug_header_size = sizeof(oh);
 
+GC_API size_t GC_CALL GC_get_debug_header_size()
+{
+    return GC_debug_header_size;
+}
+
 GC_API void GC_CALL GC_debug_register_displacement(size_t offset)
 {
   DCL_LOCK_STATE;

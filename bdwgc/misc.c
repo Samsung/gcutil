@@ -854,6 +854,8 @@ STATIC word GC_parse_mem_size_arg(const char *str)
 
 #define GC_LOG_STD_NAME "gc.log"
 
+extern size_t GC_debug_header_size;
+
 GC_API void GC_CALL GC_init(void)
 {
     /* LOCK(); -- no longer does anything this early. */

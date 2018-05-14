@@ -152,12 +152,12 @@ GC_API struct GC_ms_entry * GC_CALL GC_mark_and_push(void * /* obj */,
            (GC_word)(obj) <= (GC_word)GC_greatest_plausible_heap_addr ? \
            GC_mark_and_push(obj, msp, lim, src) : (msp))
 
-GC_API size_t GC_debug_header_size;
-       /* The size of the header added to objects allocated through    */
-       /* the GC_debug routines.                                       */
-       /* Defined as a variable so that client mark procedures don't   */
-       /* need to be recompiled for collector version changes.         */
-#define GC_USR_PTR_FROM_BASE(p) ((void *)((char *)(p) + GC_debug_header_size))
+GC_API size_t GC_CALL GC_get_debug_header_size();
+/* The size of the header added to objects allocated through    */
+/* the GC_debug routines.                                       */
+/* Defined as a variable so that client mark procedures don't   */
+/* need to be recompiled for collector version changes.         */
+#define GC_USR_PTR_FROM_BASE(p) ((void*)((char*)(p) + GC_get_debug_header_size()))
 
 /* And some routines to support creation of new "kinds", e.g. with      */
 /* custom mark procedures, by language runtimes.                        */
