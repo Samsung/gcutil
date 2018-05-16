@@ -9,8 +9,8 @@ SET (CMAKE_C_COMPILER gcc)
 SET (CMAKE_CXX_COMPILER g++)
  
 # FLAGS
-SET (GC_CXXFLAGS_DEBUG "${GC_CXXFLAGS_DEBUG} -O0 -g3 -Wall -Wextra -Werror -DESCARGOT")
-SET (GC_CXXFLAGS_RELEASE "${GC_CXXFLAGS_RELEASE} -O2 -g3 -DNDEBUG -DESCARGOT")
+SET (GC_CXXFLAGS_DEBUG "${GC_CXXFLAGS_DEBUG} -O0 -g3 -Wall -Wextra -Werror -Wno-unused-variable -DESCARGOT")
+SET (GC_CXXFLAGS_RELEASE "${GC_CXXFLAGS_RELEASE} -O2 -g3 -DNDEBUG -Wno-unused-variable -DESCARGOT")
 
 SET (DEBUG_OUTDIR "bdwgc/out/linux/x64/debug.static/.libs")
 SET (RELEASE_OUTDIR "bdwgc/out/linux/x64/release.static/.libs")
