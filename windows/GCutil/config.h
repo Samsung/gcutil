@@ -164,7 +164,12 @@
 /* #undef NO_CLOCK */
 
 /* Disable debugging, like GC_dump and its callees. */
+#ifdef NDEBUG
 #define NO_DEBUGGING 1
+#else
+#define DBG_HDRS_ALL 1
+#define KEEP_BACK_PTRS 1
+#endif
 
 /* Define to make the collector not allocate executable memory by default. */
 /* #undef NO_EXECUTE_PERMISSION */
