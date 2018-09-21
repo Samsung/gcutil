@@ -1,4 +1,4 @@
-# Garbage collector for Starfish
+# Garbage collector for Pando
 
 Based on ['Boehm-Demers-Weiser Garbage Collector'](/bdwgc/README.md).
 

@@ -1,4 +1,4 @@
-#if defined STARFISH_LINUX
+#if defined PANDO_LINUX
 #if defined GC_DEBUG
 #include "config.linux.debug.h"
 #else
