@@ -2411,7 +2411,7 @@ GC_INNER void GC_unmap(ptr_t start, size_t bytes)
         if (result != (void *)start_addr)
           ABORT("mmap(PROT_NONE) failed");
 
-#   ifdef MADV_FREE
+#   if defined(MADV_FREE) && !defined(STARFISH_ANDROID)
         adv_result = madvise(start_addr, len, MADV_DONTNEED | MADV_FREE);
 #   else
         adv_result = madvise(start_addr, len, MADV_DONTNEED);
