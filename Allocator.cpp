@@ -21,6 +21,7 @@
 
 #ifdef PROFILE_MASSIF
 
+#include <cstring>
 #include <unordered_map>
 #include <vector>
 
@@ -29,7 +30,7 @@ std::vector<void*> g_freeList;
 
 void unregisterGCAddress(void* address)
 {
-    // ASSERT(g_addressTable.find(address) != g_addressTable.end());
+    assert(g_addressTable.find(address) != g_addressTable.end());
     if (g_addressTable.find(address) != g_addressTable.end()) {
         auto iter = g_addressTable.find(address);
         free(iter->second);
@@ -56,12 +57,34 @@ void* GC_malloc_hook(size_t siz)
     return ptr;
 }
 
+void* GC_malloc_uncollectable_hook(size_t siz)
+{
+#if defined(GC_DEBUG)
+    void* ptr = GC_debug_malloc_uncollectable(siz, GC_EXTRAS);
+#else
+    void* ptr = GC_malloc_uncollectable(siz);
+#endif
+    registerGCAddress(ptr, siz);
+    return ptr;
+}
+
 void* GC_malloc_atomic_hook(size_t siz)
 {
 #if defined(GC_DEBUG)
     void* ptr = GC_debug_malloc_atomic(siz, GC_EXTRAS);
 #else
     void* ptr = GC_malloc_atomic(siz);
+#endif
+    registerGCAddress(ptr, siz);
+    return ptr;
+}
+
+void* GC_malloc_atomic_uncollectable_hook(size_t siz)
+{
+#if defined(GC_DEBUG)
+    void* ptr = GC_debug_malloc_atomic_uncollectable(siz, GC_EXTRAS);
+#else
+    void* ptr = GC_malloc_atomic_uncollectable(siz);
 #endif
     registerGCAddress(ptr, siz);
     return ptr;
@@ -78,35 +101,45 @@ void* GC_generic_malloc_hook(size_t siz, int kind)
     return ptr;
 }
 
-void* GC_generic_malloc_ignore_off_page_hook(size_t siz, int kind)
+void* GC_malloc_stubborn_hook(size_t siz)
 {
 #if defined(GC_DEBUG)
-    void* ptr = GC_debug_generic_malloc_ignore_off_page(siz, kind, GC_EXTRAS);
+    void* ptr = GC_debug_malloc_stubborn(siz, GC_EXTRAS);
 #else
-    void* ptr = GC_generic_malloc_ignore_off_page(siz, kind);
+    void* ptr = GC_malloc_stubborn(siz);
 #endif
     registerGCAddress(ptr, siz);
     return ptr;
 }
 
-void* GC_malloc_ignore_off_page_hook(size_t siz)
-{
+void* GC_strdup_hook(const char* str) {
 #if defined(GC_DEBUG)
-    void* ptr = GC_debug_malloc_ignore_off_page(siz, GC_EXTRAS);
+    void* ptr = GC_debug_strdup(str, GC_EXTRAS);
 #else
-    void* ptr = GC_malloc_ignore_off_page(siz);
+    void* ptr = GC_strdup(str);
 #endif
-    registerGCAddress(ptr, siz);
+    registerGCAddress(ptr, std::strlen(str) + 1);
     return ptr;
 }
 
-void* GC_malloc_atomic_ignore_off_page_hook(size_t siz)
-{
+void* GC_strndup_hook(const char* str) {
+    size_t len = std::strlen(str);
 #if defined(GC_DEBUG)
-    void* ptr = GC_debug_malloc_atomic_ignore_off_page(siz, GC_EXTRAS);
+    void* ptr = GC_debug_strndup(str, len, GC_EXTRAS);
 #else
-    void* ptr = GC_malloc_atomic_ignore_off_page(siz);
+    void* ptr = GC_strndup(str, len);
 #endif
+    registerGCAddress(ptr, len + 1);
+    return ptr;
+}
+
+void* GC_realloc_hook(void* address, size_t siz) {
+#if defined(GC_DEBUG)
+    void* ptr = GC_debug_realloc(address, siz, GC_EXTRAS);
+#else
+    void* ptr = GC_realloc(address, siz);
+#endif
+    unregisterGCAddress(address);
     registerGCAddress(ptr, siz);
     return ptr;
 }
@@ -122,4 +155,3 @@ void GC_free_hook(void* address)
 }
 
 #endif
-
