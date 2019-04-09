@@ -32,9 +32,14 @@ void registerGCAddress(void* address, size_t siz);
 void unregisterGCAddress(void* address);
 
 void* GC_malloc_hook(size_t siz);
+void* GC_malloc_uncollectable_hook(size_t siz);
 void* GC_malloc_atomic_hook(size_t siz);
+void* GC_malloc_atomic_uncollectable_hook(size_t siz);
 void* GC_generic_malloc_hook(size_t siz, int kind);
-void* GC_generic_malloc_ignore_off_page_hook(size_t siz, int kind);
+void* GC_malloc_stubborn_hook(size_t siz);
+void* GC_strdup_hook(const char* str);
+void* GC_strndup_hook(const char* str, size_t siz);
+void* GC_realloc_hook(void* address, size_t siz);
 void GC_free_hook(void* address);
 
 #undef GC_MALLOC_EXPLICITLY_TYPED
@@ -43,14 +48,29 @@ void GC_free_hook(void* address);
 #undef GC_MALLOC
 #define GC_MALLOC(X) GC_malloc_hook(X)
 
+#undef GC_MALLOC_UNCOLLECTABLE
+#define GC_MALLOC_UNCOLLECTABLE(siz) GC_malloc_uncollectable_hook(siz)
+
 #undef GC_MALLOC_ATOMIC
 #define GC_MALLOC_ATOMIC(X) GC_malloc_atomic_hook(X)
+
+#undef GC_MALLOC_ATOMIC_UNCOLLECTABLE
+#define GC_MALLOC_ATOMIC_UNCOLLECTABLE(sz) GC_malloc_atomic_uncollectable_hook(sz)
 
 #undef GC_GENERIC_MALLOC
 #define GC_GENERIC_MALLOC(siz, kind) GC_generic_malloc_hook(siz, kind)
 
-#undef GC_GENERIC_MALLOC_IGNORE_OFF_PAGE
-#define GC_GENERIC_MALLOC_IGNORE_OFF_PAGE(siz, kind) GC_generic_malloc_hook(siz, kind)
+#undef GC_MALLOC_STUBBORN
+#define GC_MALLOC_STUBBORN(siz) GC_malloc_stubborn_hook(siz)
+
+#undef GC_REALLOC
+#define GC_REALLOC(address, siz) GC_realloc_hook(address, siz)
+
+#undef GC_STRDUP
+#define GC_STRDUP(str) GC_strdup_hook(str)
+
+#undef GC_STRNDUP
+#define GC_STRNDUP(str, siz) GC_strndup_hook(str, siz)
 
 #undef GC_FREE
 #define GC_FREE(X) GC_free_hook(X)
@@ -58,7 +78,7 @@ void GC_free_hook(void* address);
 #undef GC_REGISTER_FINALIZER_NO_ORDER
 #define GC_REGISTER_FINALIZER_NO_ORDER(p, f, d, of, od) GC_register_finalizer_no_order(p, f, d, of, od)
 
-#else
+#endif
 
 /* FIXME
  * This is just a workaround to remove ignore_off_page allocator.
@@ -73,8 +93,6 @@ void GC_free_hook(void* address);
 
 #undef GC_GENERIC_MALLOC_IGNORE_OFF_PAGE
 #define GC_GENERIC_MALLOC_IGNORE_OFF_PAGE GC_GENERIC_MALLOC
-
-#endif
 
 #include <gc_allocator.h>
 #include <gc_cpp.h>
