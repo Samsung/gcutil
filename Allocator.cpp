@@ -19,31 +19,137 @@
 
 #include "Allocator.h"
 
-#ifdef PROFILE_MASSIF
-
+#ifdef ESCARGOT_MEM_STATS
 #include <cstring>
-#include <unordered_map>
-#include <vector>
+#include <map>
+#ifdef ESCARGOT_VALGRIND
+#include <valgrind/valgrind.h>
+#endif
 
-std::unordered_map<void*, void*> g_addressTable;
-std::vector<void*> g_freeList;
+struct AllocInfo {
+    GC_finalization_proc user_cb;
+    void* user_data;
+    size_t size;
+};
 
-void unregisterGCAddress(void* address)
+struct HeapInfo {
+    size_t allocated;
+    size_t peak_allocated;
+    size_t total_allocated;
+    size_t peak_waste;
+    size_t total_waste;
+    size_t alloc_count;
+    size_t free_count;
+};
+
+// This structure holds information about the size of the
+// allcoated memory area and a finalization user callback
+// with its user defined data.
+static std::map<void*, AllocInfo> addressTable;
+
+static HeapInfo heapInfo = { 0, 0, 0, 0, 0, 0, 0 };
+
+// The addressTable allocation should be in a separated function. This is
+// important, because the noise (helper structiore allcoations) can be
+// filtered out by the Freya tool of Valgrind.
+void createAddressEntry(void* address, size_t size)
 {
-    assert(g_addressTable.find(address) != g_addressTable.end());
-    if (g_addressTable.find(address) != g_addressTable.end()) {
-        auto iter = g_addressTable.find(address);
-        free(iter->second);
-        g_addressTable.erase(iter);
-    }
+    auto it = addressTable.find(address);
+    // The address should not exist.
+    assert(it == addressTable.end());
+
+    addressTable[address] = { nullptr, nullptr, size };
+}
+
+void unregisterGCAddress(void* address, void* data)
+{
+    auto it = addressTable.find(address);
+    // The address should exist.
+    assert(it != addressTable.end());
+
+    AllocInfo allocInfo = it->second;
+    // Execute the user defined callback.
+    if (allocInfo.user_cb)
+        allocInfo.user_cb(address, allocInfo.user_data);
+
+    heapInfo.allocated -= allocInfo.size;
+    heapInfo.free_count++;
+
+    addressTable.erase(it);
+
+#ifdef ESCARGOT_VALGRIND
+    VALGRIND_FREELIKE_BLOCK(address, 0);
+#endif
+    // Unregister the callback function. This is necessary if an address have a
+    // registered finalizer function, but the memory area is explicitly deallocated
+    // by GC_FREE.
+#if defined(GC_DEBUG)
+    GC_debug_register_finalizer_no_order(address, nullptr, nullptr, nullptr, nullptr);
+#else
+    GC_register_finalizer_no_order(address, nullptr, nullptr, nullptr, nullptr);
+#endif
 }
 
 void registerGCAddress(void* address, size_t siz)
 {
-    if (g_addressTable.find(address) != g_addressTable.end()) {
-        unregisterGCAddress(address);
-    }
-    g_addressTable[address] = malloc(siz);
+    auto it = addressTable.find(address);
+    // The address should not exist.
+    assert(it == addressTable.end());
+
+    createAddressEntry(address, siz);
+
+#ifdef ESCARGOT_VALGRIND
+    VALGRIND_MALLOCLIKE_BLOCK(address, siz, 0, 0);
+#endif
+    // Calculate statistics.
+    size_t waste = GC_size(address) - siz;
+
+    heapInfo.total_waste += waste;
+    heapInfo.allocated += siz;
+    heapInfo.total_allocated += siz;
+    heapInfo.alloc_count++;
+
+    if (waste > heapInfo.peak_waste)
+        heapInfo.peak_waste = waste;
+
+    if (heapInfo.allocated > heapInfo.peak_allocated)
+        heapInfo.peak_allocated = heapInfo.allocated;
+
+    // Register finalizer callback for all allocated memory addresses.
+    // In this case a notification happens before deallocating the
+    // memory area by the GC.
+#if defined(GC_DEBUG)
+    GC_debug_register_finalizer_no_order(address, unregisterGCAddress, nullptr, nullptr, nullptr);
+#else
+    GC_register_finalizer_no_order(address, unregisterGCAddress, nullptr, nullptr, nullptr);
+#endif
+}
+
+void GC_print_heap_usage()
+{
+    printf("Heap stats (BDWGC):\n");
+    printf("  Total allocated: %lu bytes\n", heapInfo.total_allocated);
+    printf("  Peak allocated: %lu bytes\n", heapInfo.peak_allocated);
+    printf("  Total Waste: %lu bytes\n", heapInfo.total_waste);
+    printf("  Peak waste: %lu bytes\n", heapInfo.peak_waste);
+    printf("  Leak: %lu bytes\n", heapInfo.allocated);
+    printf("  Allocation count: %lu\n", heapInfo.alloc_count);
+    printf("  Free count: %lu\n", heapInfo.free_count);
+}
+
+// This function saves the used defined callback and data for the pointer.
+// There are GC_REGISTER_FINALIZER_NO_ORDER usages within Escargot (e.g.
+// in the ByteCode.h file).
+void GC_register_finalizer_no_order_hook(void* obj, GC_finalization_proc fn,
+                                         void* cd, GC_finalization_proc *ofn,
+                                         void** ocd)
+{
+    auto it = addressTable.find(obj);
+    // The address should exist.
+    assert(it != addressTable.end());
+
+    (it->second).user_cb = fn;
+    (it->second).user_data = cd;
 }
 
 void* GC_malloc_hook(size_t siz)
@@ -90,6 +196,17 @@ void* GC_malloc_atomic_uncollectable_hook(size_t siz)
     return ptr;
 }
 
+void* GC_malloc_explicitly_typed_hook(size_t siz, GC_descr desc)
+{
+#if defined(GC_DEBUG)
+    void* ptr = GC_debug_malloc(siz, GC_EXTRAS);
+#else
+    void* ptr = GC_malloc_explicitly_typed(siz, desc);
+#endif
+    registerGCAddress(ptr, siz);
+    return ptr;
+}
+
 void* GC_generic_malloc_hook(size_t siz, int kind)
 {
 #if defined(GC_DEBUG)
@@ -112,7 +229,8 @@ void* GC_malloc_stubborn_hook(size_t siz)
     return ptr;
 }
 
-void* GC_strdup_hook(const char* str) {
+void* GC_strdup_hook(const char* str)
+{
 #if defined(GC_DEBUG)
     void* ptr = GC_debug_strdup(str, GC_EXTRAS);
 #else
@@ -122,7 +240,8 @@ void* GC_strdup_hook(const char* str) {
     return ptr;
 }
 
-void* GC_strndup_hook(const char* str) {
+void* GC_strndup_hook(const char* str)
+{
     size_t len = std::strlen(str);
 #if defined(GC_DEBUG)
     void* ptr = GC_debug_strndup(str, len, GC_EXTRAS);
@@ -133,25 +252,26 @@ void* GC_strndup_hook(const char* str) {
     return ptr;
 }
 
-void* GC_realloc_hook(void* address, size_t siz) {
+void* GC_realloc_hook(void* address, size_t siz)
+{
+    unregisterGCAddress(address, nullptr);
 #if defined(GC_DEBUG)
     void* ptr = GC_debug_realloc(address, siz, GC_EXTRAS);
 #else
     void* ptr = GC_realloc(address, siz);
 #endif
-    unregisterGCAddress(address);
     registerGCAddress(ptr, siz);
     return ptr;
 }
 
 void GC_free_hook(void* address)
 {
+    unregisterGCAddress(address, nullptr);
 #if defined(GC_DEBUG)
     GC_debug_free(address);
 #else
     GC_free(address);
 #endif
-    unregisterGCAddress(address);
 }
 
 #endif
