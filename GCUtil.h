@@ -25,16 +25,12 @@
     } while (0)
 #endif
 
-//#define PROFILE_MASSIF
-#ifdef PROFILE_MASSIF
-
-void registerGCAddress(void* address, size_t siz);
-void unregisterGCAddress(void* address);
-
+#ifdef ESCARGOT_MEM_STATS
 void* GC_malloc_hook(size_t siz);
 void* GC_malloc_uncollectable_hook(size_t siz);
 void* GC_malloc_atomic_hook(size_t siz);
 void* GC_malloc_atomic_uncollectable_hook(size_t siz);
+void* GC_malloc_explicitly_typed_hook(size_t siz, GC_descr d);
 void* GC_generic_malloc_hook(size_t siz, int kind);
 void* GC_malloc_stubborn_hook(size_t siz);
 void* GC_strdup_hook(const char* str);
@@ -42,8 +38,13 @@ void* GC_strndup_hook(const char* str, size_t siz);
 void* GC_realloc_hook(void* address, size_t siz);
 void GC_free_hook(void* address);
 
+void GC_register_finalizer_no_order_hook(void* obj, GC_finalization_proc fn,
+                                         void* cd, GC_finalization_proc *ofn,
+                                         void** ocd);
+void GC_print_heap_usage();
+
 #undef GC_MALLOC_EXPLICITLY_TYPED
-#define GC_MALLOC_EXPLICITLY_TYPED(bytes, d) GC_MALLOC(bytes)
+#define GC_MALLOC_EXPLICITLY_TYPED(bytes, d) GC_malloc_explicitly_typed_hook(bytes, d)
 
 #undef GC_MALLOC
 #define GC_MALLOC(X) GC_malloc_hook(X)
@@ -56,6 +57,9 @@ void GC_free_hook(void* address);
 
 #undef GC_MALLOC_ATOMIC_UNCOLLECTABLE
 #define GC_MALLOC_ATOMIC_UNCOLLECTABLE(sz) GC_malloc_atomic_uncollectable_hook(sz)
+
+#undef GC_MALLOC_EXPLICITLY_TYPED
+#define GC_MALLOC_EXPLICITLY_TYPED(bytes, d) GC_malloc_explicitly_typed_hook(bytes, d)
 
 #undef GC_GENERIC_MALLOC
 #define GC_GENERIC_MALLOC(siz, kind) GC_generic_malloc_hook(siz, kind)
@@ -76,7 +80,7 @@ void GC_free_hook(void* address);
 #define GC_FREE(X) GC_free_hook(X)
 
 #undef GC_REGISTER_FINALIZER_NO_ORDER
-#define GC_REGISTER_FINALIZER_NO_ORDER(p, f, d, of, od) GC_register_finalizer_no_order(p, f, d, of, od)
+#define GC_REGISTER_FINALIZER_NO_ORDER(p, f, d, of, od) GC_register_finalizer_no_order_hook(p, f, d, of, od);
 
 #endif
 

@@ -45,14 +45,6 @@
 
 #include "GCUtil.h"
 
-#ifdef PROFILE_MASSIF
-#include <unordered_map>
-#include <vector>
-
-extern std::unordered_map<void*, void*> g_addressTable;
-extern std::vector<void*> g_freeList;
-#endif
-
 namespace GCUtil {
 
 template <class GC_Tp>
