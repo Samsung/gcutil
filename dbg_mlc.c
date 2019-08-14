@@ -210,6 +210,16 @@
     size_t offset;
     void *base;
 
+#ifdef ESCARGOT
+    ptr_t object_start;
+
+    if (GC_base(current) == 0) {
+        GC_err_printf("GC_base(%p) == 0\n", current);
+        return;
+    }
+#endif
+
+
     GC_print_heap_obj((ptr_t)GC_base(current));
 
     for (i = 0; ; ++i) {
@@ -225,7 +235,12 @@
       GC_err_printf("Reachable via %d levels of pointers from ", i);
       switch(source) {
         case GC_REFD_FROM_ROOT:
+#ifndef ESCARGOT
           GC_err_printf("root at %p\n\n", base);
+#else
+          /* Print more detailed information in backtrace */
+          GC_err_printf("root at %p (=> points %p)\n\n", base, *((void**)base));
+#endif
           goto out;
         case GC_REFD_FROM_REG:
           GC_err_printf("root in register\n\n");
@@ -234,7 +249,27 @@
           GC_err_printf("list of finalizable objects\n\n");
           goto out;
         case GC_REFD_FROM_HEAP:
+#ifndef ESCARGOT
           GC_err_printf("offset %ld in object:\n", (long)offset);
+#else
+          /* Print more detailed information in backtrace */
+          object_start = (ptr_t)GC_base(base) + sizeof(oh);
+          GC_bool interior = ((*((void**)(object_start + offset))) != current);
+          if (interior) {
+              void* of = (*((void**)(object_start + offset)));
+              int interior_offset = ((ptr_t)of - (ptr_t)current);
+              GC_err_printf("offset %ld in object %p (=> points %p%s %d):\n",
+                            (long)offset,
+                            object_start,
+                            *((void**)(object_start + offset)),
+                            interior?", interior":"", interior_offset);
+          } else {
+              GC_err_printf("offset %ld in object %p (=> points %p):\n",
+                            (long)offset,
+                            object_start,
+                            *((void**)(object_start + offset)));
+          }
+#endif
           /* Take GC_base(base) to get real base, i.e. header. */
           GC_print_heap_obj((ptr_t)GC_base(base));
           break;
@@ -561,7 +596,11 @@ GC_API GC_ATTR_MALLOC void * GC_CALL
                             OPT_RA s, i);
 }
 
+#ifdef ESCARGOT // To expose API
+GC_API GC_ATTR_MALLOC void * GC_debug_generic_malloc(size_t lb, int knd, GC_EXTRA_PARAMS)
+#else
 STATIC void * GC_debug_generic_malloc(size_t lb, int knd, GC_EXTRA_PARAMS)
+#endif
 {
     void * result = GC_generic_malloc(SIZET_SAT_ADD(lb, DEBUG_BYTES), knd);
 
@@ -893,6 +932,29 @@ GC_API void * GC_CALL GC_debug_realloc(void * p, size_t lb, GC_EXTRA_PARAMS)
     }
     return(result);
 }
+
+#ifdef ESCARGOT // To expose API
+
+GC_API GC_ATTR_MALLOC void * GC_CALL
+GC_debug_generic_malloc_ignore_off_page(size_t lb, int k, GC_EXTRA_PARAMS)
+{
+  void * result = GC_generic_malloc_inner_ignore_off_page(
+                                              lb + DEBUG_BYTES, k);
+
+  if (result == 0) {
+      GC_err_printf("GC internal allocation (%lu bytes) returning NULL (%s:%d)\n",
+                     (unsigned long) lb, s, i);
+      return(0);
+  }
+  if (!GC_debugging_started) {
+      GC_start_debugging_inner();
+  }
+  ADD_CALL_CHAIN(result, GC_RETURN_ADDR);
+  return (GC_store_debug_info(result, (word)lb, s, i));
+}
+
+#endif
+
 
 GC_API GC_ATTR_MALLOC void * GC_CALL
     GC_debug_generic_or_special_malloc(size_t lb, int knd, GC_EXTRA_PARAMS)

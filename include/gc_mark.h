@@ -178,6 +178,15 @@ GC_API unsigned GC_CALL GC_new_kind_inner(void ** /* free_list */,
                             int /* add_size_to_descriptor */,
                             int /* clear_new_objects */) GC_ATTR_NONNULL(1);
 
+#ifdef ESCARGOT
+/* Same as above but this kind of object can be enumerated safely.
+ * See comments in GC_do_enumerate_reachable_objects for details */
+GC_API unsigned GC_CALL GC_new_kind_enumerable(void ** /* free_list */,
+                            GC_word /* mark_descriptor_template */,
+                            int /* add_size_to_descriptor */,
+                            int /* clear_new_objects */) GC_ATTR_NONNULL(1);
+#endif
+
 /* Return a new mark procedure identifier, suitable for use as  */
 /* the first argument in GC_MAKE_PROC.                          */
 GC_API unsigned GC_CALL GC_new_proc(GC_mark_proc);
@@ -203,6 +212,32 @@ GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
                                 /* As above, but pointers to past the   */
                                 /* first page of the resulting object   */
                                 /* are ignored.                         */
+
+#ifdef ESCARGOT // To expose API
+GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
+                                         GC_debug_generic_malloc(
+                                            size_t /* lb */,
+                                            int /* knd */,
+                                            GC_EXTRA_PARAMS);
+GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
+                                        GC_debug_generic_malloc_ignore_off_page(
+                                            size_t /* lb */, int /* knd */,
+                                            GC_EXTRA_PARAMS);
+
+#ifndef GC_GENERIC_MALLOC
+#ifdef GC_DEBUG
+# define GC_GENERIC_MALLOC(sz, knd) \
+                GC_debug_generic_malloc(sz, knd, GC_EXTRAS)
+# define GC_GENERIC_MALLOC_IGNORE_OFF_PAGE(sz, knd) \
+                GC_debug_generic_malloc_ignore_off_page(sz, knd, GC_EXTRAS)
+#else /* GC_DEBUG */
+# define GC_GENERIC_MALLOC(sz, knd) \
+                GC_generic_malloc(sz, knd)
+# define GC_GENERIC_MALLOC_IGNORE_OFF_PAGE(sz, knd) \
+                GC_generic_malloc_ignore_off_page(sz, knd)
+#endif /* GC_DEBUG */
+#endif
+#endif
 
 /* Generalized version of GC_malloc_[atomic_]uncollectable.     */
 GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
@@ -276,6 +311,33 @@ GC_API GC_start_callback_proc GC_CALL GC_get_start_callback(void);
 GC_API int GC_CALL GC_is_marked(const void *) GC_ATTR_NONNULL(1);
 GC_API void GC_CALL GC_clear_mark_bit(const void *) GC_ATTR_NONNULL(1);
 GC_API void GC_CALL GC_set_mark_bit(const void *) GC_ATTR_NONNULL(1);
+
+#ifdef ESCARGOT
+
+struct GC_mark_custom_result {
+    GC_word* from;
+    GC_word* to;
+};
+
+/* To use mark function, we should choose between:
+ * 1. include private header or 2. do some work inside bdwgc
+ * Currently second choice is adopted,
+ * but it can be changed in future for better performance.
+ */
+typedef GC_word* (GC_get_next_pointer_proc)(GC_word* ptr, GC_word** next_ptr);
+GC_API struct GC_ms_entry* GC_mark_and_push_custom_iterable(GC_word* addr,
+                                                   struct GC_ms_entry *mark_stack_ptr,
+                                                   struct GC_ms_entry *mark_stack_limit,
+                                                   GC_get_next_pointer_proc proc);
+
+typedef int (GC_get_sub_pointer_proc)(void* ptr, struct GC_mark_custom_result* sub_ptrs);
+GC_API struct GC_ms_entry* GC_mark_and_push_custom(GC_word* addr,
+                                                   struct GC_ms_entry *mark_stack_ptr,
+                                                   struct GC_ms_entry *mark_stack_limit,
+                                                   GC_get_sub_pointer_proc proc,
+                                                   struct GC_mark_custom_result* sub_ptrs,
+                                                   const int number_of_sub_pointer);
+#endif
 
 /* Push everything in the given range onto the mark stack.              */
 /* (GC_push_conditional pushes either all or only dirty pages depending */
