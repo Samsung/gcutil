@@ -933,29 +933,6 @@ GC_API void * GC_CALL GC_debug_realloc(void * p, size_t lb, GC_EXTRA_PARAMS)
     return(result);
 }
 
-#ifdef ESCARGOT // To expose API
-
-GC_API GC_ATTR_MALLOC void * GC_CALL
-GC_debug_generic_malloc_ignore_off_page(size_t lb, int k, GC_EXTRA_PARAMS)
-{
-  void * result = GC_generic_malloc_inner_ignore_off_page(
-                                              lb + DEBUG_BYTES, k);
-
-  if (result == 0) {
-      GC_err_printf("GC internal allocation (%lu bytes) returning NULL (%s:%d)\n",
-                     (unsigned long) lb, s, i);
-      return(0);
-  }
-  if (!GC_debugging_started) {
-      GC_start_debugging_inner();
-  }
-  ADD_CALL_CHAIN(result, GC_RETURN_ADDR);
-  return (GC_store_debug_info(result, (word)lb, s, i));
-}
-
-#endif
-
-
 GC_API GC_ATTR_MALLOC void * GC_CALL
     GC_debug_generic_or_special_malloc(size_t lb, int knd, GC_EXTRA_PARAMS)
 {

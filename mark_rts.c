@@ -876,6 +876,12 @@ STATIC void GC_push_regs_and_stack(ptr_t cold_gc_frame)
     GC_with_callee_saves_pushed(GC_push_current_stack, cold_gc_frame);
 }
 
+STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+GC_API void GC_CALL GC_register_mark_stack_func(GC_mark_stack_func func)                   
+{
+        GC_mark_stack_func_proc = func;
+}
+
 /*
  * Call the mark routines (GC_push_one for a single pointer,
  * GC_push_conditional on groups of pointers) on every top level

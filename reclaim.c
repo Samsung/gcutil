@@ -51,7 +51,7 @@ STATIC unsigned GC_n_leaked = 0;
 
 GC_INNER GC_bool GC_have_errors = FALSE;
 
-#if (!defined(EAGER_SWEEP) && defined(ENABLE_DISCLAIM)) || defined(ESCARGOT)
+#if !defined(EAGER_SWEEP) && (defined(ENABLE_DISCLAIM) || defined(ESCARGOT))
   STATIC void GC_reclaim_unconditionally_marked(void);
 #endif
 
@@ -929,7 +929,7 @@ GC_INNER GC_bool GC_reclaim_all(GC_stop_func stop_func, GC_bool ignore_old)
     return(TRUE);
 }
 
-#if (!defined(EAGER_SWEEP) && defined(ENABLE_DISCLAIM) || defined(ESCARGOT)
+#if !defined(EAGER_SWEEP) && (defined(ENABLE_DISCLAIM) || defined(ESCARGOT))
 /* We do an eager sweep on heap blocks where unconditional marking has  */
 /* been enabled, so that any reclaimable objects have been reclaimed    */
 /* before we start marking.  This is a simplified GC_reclaim_all        */

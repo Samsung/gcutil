@@ -914,7 +914,7 @@ GC_API mse * GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr
         GC_word* next_ptr;
         GC_word* point = proc(iterator, &next_ptr);
         if (point) {
-            PUSH_CONTENTS((ptr_t)point, mark_stack_ptr, mark_stack_limit, iterator, exit);
+            PUSH_CONTENTS((ptr_t)point, mark_stack_ptr, mark_stack_limit, iterator);
         }
         iterator = next_ptr;
         if (iterator >= (GC_word*)end)
@@ -936,7 +936,7 @@ GC_API mse * GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr, mse *ma
     i = proc(start, arr);
     for (; i < number_of_sub_pointer; i ++) {
         if (arr[i].to)
-            PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit, arr[i].from, exit);
+            PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit, arr[i].from);
     }
     return (mark_stack_ptr);
 }
