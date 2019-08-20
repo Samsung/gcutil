@@ -213,7 +213,7 @@ GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
                                 /* first page of the resulting object   */
                                 /* are ignored.                         */
 
-#ifdef ESCARGOT // To expose API
+#ifdef ESCARGOT /* To expose API */
 GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void * GC_CALL
                                          GC_debug_generic_malloc(
                                             size_t /* lb */,

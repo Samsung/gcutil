@@ -67,19 +67,31 @@ GC_INNER unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
 GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
 /* PTRFREE */ { &GC_aobjfreelist[0], 0 /* filled in dynamically */,
                 /* 0 | */ GC_DS_LENGTH, FALSE, FALSE
+#ifdef ESCARGOT
+                /*, */ OK_EAGER_SWEEP_INITZ
+#endif
                 /*, */ OK_DISCLAIM_INITZ },
 /* NORMAL */  { &GC_objfreelist[0], 0,
                 /* 0 | */ GC_DS_LENGTH,
                                 /* adjusted in GC_init for EXTRA_BYTES  */
                 TRUE /* add length to descr */, TRUE
+#ifdef ESCARGOT
+                /*, */ OK_EAGER_SWEEP_INITZ
+#endif
                 /*, */ OK_DISCLAIM_INITZ },
 /* UNCOLLECTABLE */
               { &GC_uobjfreelist[0], 0,
                 /* 0 | */ GC_DS_LENGTH, TRUE /* add length to descr */, TRUE
+#ifdef ESCARGOT
+                /*, */ OK_EAGER_SWEEP_INITZ
+#endif
                 /*, */ OK_DISCLAIM_INITZ },
 # ifdef GC_ATOMIC_UNCOLLECTABLE
               { &GC_auobjfreelist[0], 0,
                 /* 0 | */ GC_DS_LENGTH, FALSE /* add length to descr */, FALSE
+#ifdef ESCARGOT
+                /*, */ OK_EAGER_SWEEP_INITZ
+#endif
                 /*, */ OK_DISCLAIM_INITZ },
 # endif
 };
@@ -902,19 +914,22 @@ GC_INNER mse * GC_mark_from(mse *mark_stack_top, mse *mark_stack,
 #ifdef ESCARGOT
 GC_API mse * GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr, mse *mark_stack_limit,
                                      GC_get_next_pointer_proc proc) {
+    const char* start;
+    const char* end;
+
     DECLARE_HDR_CACHE;
 
     INIT_HDR_CACHE;
 
-    const char* start = GC_USR_PTR_FROM_BASE(addr);
-    const char* end = ((char*)addr) + GC_size(addr);
+    start = GC_USR_PTR_FROM_BASE(addr);
+    end = ((char*)addr) + GC_size(addr);
 
     GC_word* iterator = (GC_word*)start;
     while (TRUE) {
         GC_word* next_ptr;
         GC_word* point = proc(iterator, &next_ptr);
         if (point) {
-            PUSH_CONTENTS((ptr_t)point, mark_stack_ptr, mark_stack_limit, iterator);
+            PUSH_CONTENTS((ptr_t)point, mark_stack_ptr, mark_stack_limit, (ptr_t)iterator);
         }
         iterator = next_ptr;
         if (iterator >= (GC_word*)end)
@@ -936,7 +951,7 @@ GC_API mse * GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr, mse *ma
     i = proc(start, arr);
     for (; i < number_of_sub_pointer; i ++) {
         if (arr[i].to)
-            PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit, arr[i].from);
+            PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit, (ptr_t)arr[i].from);
     }
     return (mark_stack_ptr);
 }

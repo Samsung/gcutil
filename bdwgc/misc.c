@@ -135,10 +135,14 @@ GC_bool GC_quiet = 0; /* used also in pcr_interface.c */
 # endif
 #endif /* !SHORT_DBG_HDRS */
 
-#ifdef ALL_INTERIOR_POINTERS
-  int GC_all_interior_pointers = 1;
-#else
+#ifdef ESCARGOT
   int GC_all_interior_pointers = 0;
+#else
+  #ifdef ALL_INTERIOR_POINTERS
+    int GC_all_interior_pointers = 1;
+  #else
+    int GC_all_interior_pointers = 0;
+  #endif
 #endif
 
 #ifdef FINALIZE_ON_DEMAND

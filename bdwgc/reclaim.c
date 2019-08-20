@@ -14,10 +14,10 @@
  * modified is included with the above copyright notice.
  */
 
-// escargot
-// force enable eager sweep
+/* escargot */
+/* force enable eager sweep */
 #define EAGER_SWEEP
-// <--- escargot
+/* <--- escargot */
 
 #include "private/gc_priv.h"
 
@@ -735,6 +735,8 @@ GC_API void GC_CALL GC_dump_for_graph(const char* log_file_name,
                                       const char* phase_name)
 {
     struct Print_stats_escargot pstats;
+    size_t peak_rss;
+    struct rusage ru;
 
     pstats.number_of_blocks = 0;
     pstats.total_bytes = 0;
@@ -744,9 +746,8 @@ GC_API void GC_CALL GC_dump_for_graph(const char* log_file_name,
     GC_apply_to_all_blocks(GC_gather_information_for_escargot, (word)&pstats);
 
 #if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
-    struct rusage ru;
     getrusage(RUSAGE_SELF, &ru);
-    size_t peak_rss = ru.ru_maxrss;
+    peak_rss = ru.ru_maxrss;
 
     GC_printf("[%lu] %s : PeakRSS %zu KB, TotalHeap %lu KB, MarkedHeap %lu KB\n",
               (unsigned long) GC_get_gc_no(), phase_name, peak_rss,

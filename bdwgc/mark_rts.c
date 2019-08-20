@@ -870,7 +870,7 @@ GC_INNER void GC_cond_register_dynamic_libraries(void)
     GC_no_dls = TRUE;
 # endif
 }
-
+#ifdef ESCARGOT
 STATIC void GC_push_regs_and_stack(ptr_t cold_gc_frame)
 {
     GC_with_callee_saves_pushed(GC_push_current_stack, cold_gc_frame);
@@ -881,7 +881,7 @@ GC_API void GC_CALL GC_register_mark_stack_func(GC_mark_stack_func func)
 {
         GC_mark_stack_func_proc = func;
 }
-
+#endif
 /*
  * Call the mark routines (GC_push_one for a single pointer,
  * GC_push_conditional on groups of pointers) on every top level
@@ -951,6 +951,13 @@ GC_INNER void GC_push_roots(GC_bool all, ptr_t cold_gc_frame GC_ATTR_UNUSED)
      * This is usually done by saving the current context on the
      * stack, and then just tracing from the stack.
      */
+#ifdef ESCARGOT
+     if (GC_mark_stack_func_proc) {
+         (*GC_mark_stack_func_proc)();
+         return;
+     }
+#endif
+
 #    ifndef STACK_NOT_SCANNED
        GC_push_regs_and_stack(cold_gc_frame);
 #    endif

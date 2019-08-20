@@ -253,9 +253,10 @@
           GC_err_printf("offset %ld in object:\n", (long)offset);
 #else
           /* Print more detailed information in backtrace */
-          object_start = (ptr_t)GC_base(base) + sizeof(oh);
-          GC_bool interior = ((*((void**)(object_start + offset))) != current);
-          if (interior) {
+          {
+            object_start = (ptr_t)GC_base(base) + sizeof(oh);
+            GC_bool interior = ((*((void**)(object_start + offset))) != current);
+            if (interior) {
               void* of = (*((void**)(object_start + offset)));
               int interior_offset = ((ptr_t)of - (ptr_t)current);
               GC_err_printf("offset %ld in object %p (=> points %p%s %d):\n",
@@ -263,11 +264,12 @@
                             object_start,
                             *((void**)(object_start + offset)),
                             interior?", interior":"", interior_offset);
-          } else {
+            } else {
               GC_err_printf("offset %ld in object %p (=> points %p):\n",
                             (long)offset,
                             object_start,
                             *((void**)(object_start + offset)));
+            }
           }
 #endif
           /* Take GC_base(base) to get real base, i.e. header. */
