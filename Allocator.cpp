@@ -19,6 +19,32 @@
 
 #include "Allocator.h"
 
+#include <vector>
+#include <algorithm>
+
+GC_API void GC_CALL GC_set_on_collection_event(GC_on_collection_event_proc);
+
+std::vector<std::pair<GC_on_event_proc, void*>> g_gcEventCallbacks;
+
+GC_API void GC_CALL GC_add_event_callback(GC_on_event_proc fn, void* data)
+{
+    g_gcEventCallbacks.push_back(std::make_pair(fn, data));
+
+    GC_set_on_collection_event([](GC_EventType evtType) {
+        for (size_t i = 0; i < g_gcEventCallbacks.size(); i ++) {
+            g_gcEventCallbacks[i].first(evtType, g_gcEventCallbacks[i].second);
+        }
+    });
+}
+
+GC_API void GC_CALL GC_remove_event_callback(GC_on_event_proc fn, void* data)
+{
+    auto iter = std::find(g_gcEventCallbacks.begin(), g_gcEventCallbacks.end(), std::make_pair(fn, data));
+    if (iter != g_gcEventCallbacks.end()) {
+        g_gcEventCallbacks.erase(iter);
+    }
+}
+
 #ifdef ESCARGOT_MEM_STATS
 #include <cstring>
 #include <map>
@@ -128,13 +154,13 @@ void registerGCAddress(void* address, size_t siz)
 void GC_print_heap_usage()
 {
     printf("Heap stats (BDWGC):\n");
-    printf("  Total allocated: %lu bytes\n", heapInfo.total_allocated);
-    printf("  Peak allocated: %lu bytes\n", heapInfo.peak_allocated);
-    printf("  Total Waste: %lu bytes\n", heapInfo.total_waste);
-    printf("  Peak waste: %lu bytes\n", heapInfo.peak_waste);
-    printf("  Leak: %lu bytes\n", heapInfo.allocated);
-    printf("  Allocation count: %lu\n", heapInfo.alloc_count);
-    printf("  Free count: %lu\n", heapInfo.free_count);
+    printf("  Total allocated: %zu bytes\n", heapInfo.total_allocated);
+    printf("  Peak allocated: %zu bytes\n", heapInfo.peak_allocated);
+    printf("  Total Waste: %zu bytes\n", heapInfo.total_waste);
+    printf("  Peak waste: %zu bytes\n", heapInfo.peak_waste);
+    printf("  Leak: %zu bytes\n", heapInfo.allocated);
+    printf("  Allocation count: %zu\n", heapInfo.alloc_count);
+    printf("  Free count: %zu\n", heapInfo.free_count);
 }
 
 // This function saves the used defined callback and data for the pointer.
@@ -254,18 +280,25 @@ void* GC_strndup_hook(const char* str)
 
 void* GC_realloc_hook(void* address, size_t siz)
 {
-    unregisterGCAddress(address, nullptr);
+    if (address) {
+        unregisterGCAddress(address, nullptr);
+    }
 #if defined(GC_DEBUG)
     void* ptr = GC_debug_realloc(address, siz, GC_EXTRAS);
 #else
     void* ptr = GC_realloc(address, siz);
 #endif
-    registerGCAddress(ptr, siz);
+    if (ptr) {
+        registerGCAddress(ptr, siz);
+    }
     return ptr;
 }
 
 void GC_free_hook(void* address)
 {
+    if (!address) {
+        return;
+    }
     unregisterGCAddress(address, nullptr);
 #if defined(GC_DEBUG)
     GC_debug_free(address);

@@ -223,8 +223,14 @@
 # endif
 #endif /* GC_DLL */
 
+#ifdef ESCARGOT
+#ifndef GC_API
+# define GC_API extern "C"
+#endif
+#else
 #ifndef GC_API
 # define GC_API extern
+#endif
 #endif
 
 #ifndef GC_CALL

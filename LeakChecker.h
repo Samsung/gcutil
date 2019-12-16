@@ -1,7 +1,6 @@
 #ifndef __GCUtilLeakChecker__
 #define __GCUtilLeakChecker__
 
-//#define PROFILE_BDWGC
 #ifdef PROFILE_BDWGC
 
 #include "GCUtil.h"
