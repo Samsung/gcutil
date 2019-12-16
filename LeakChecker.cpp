@@ -22,12 +22,12 @@ void HeapUsageVisualizer::initialize()
         fprintf(fp, "GC_no    PeakRSS   TotalHeap    Marked  # Phase\n");
         fclose(fp);
     }
-    GC_set_on_collection_event([](GC_EventType evtType) {
+    GC_add_event_callback([](GC_EventType evtType, void*) {
         if (GC_EVENT_RECLAIM_START == evtType) {
             GC_dump_for_graph(HeapUsageVisualizer::m_outputFile.c_str(),
                               s_gcLogPhaseName.c_str());
         }
-    });
+    }, nullptr);
 }
 
 
