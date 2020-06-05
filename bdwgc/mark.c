@@ -925,11 +925,13 @@ GC_API mse * GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr
     end = ((char*)addr) + GC_size(addr);
 
     GC_word* iterator = (GC_word*)start;
+    GC_word* next_ptr;
+    GC_word* from;
+    GC_word* to;
     while (TRUE) {
-        GC_word* next_ptr;
-        GC_word* point = proc(iterator, &next_ptr);
-        if (point) {
-            PUSH_CONTENTS((ptr_t)point, mark_stack_ptr, mark_stack_limit, (ptr_t)iterator);
+        proc(iterator, (GC_word*)end, &next_ptr, &from, &to);
+        if (to) {
+            PUSH_CONTENTS((ptr_t)to, mark_stack_ptr, mark_stack_limit, (ptr_t)from);
         }
         iterator = next_ptr;
         if (iterator >= (GC_word*)end)

@@ -2171,9 +2171,35 @@ void GC_register_data_segments(void)
 #   endif
 
     if (bytes & (GC_page_size - 1)) ABORT("Bad GET_MEM arg");
+
+#   if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    if (last_addr == 0) {
+        last_addr = (ptr_t)0x1000;
+    }
+#   if defined(MAP_32BIT)
+    result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
+                                    | (GC_pages_executable ? PROT_EXEC : 0),
+                  GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0/* offset */);
+#   else
+    while ((size_t)last_addr < 1073741824L * 3) {
+        result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
+                                        | (GC_pages_executable ? PROT_EXEC : 0),
+                      GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED, zero_fd, 0/* offset */);
+        if (result != MAP_FAILED) {
+            break;
+        }
+        last_addr = (ptr_t)((size_t)last_addr + GC_page_size);
+    }
+
+    if ((size_t)last_addr > 1073741824L * 3) {
+        ABORT("Cannot allocate memory");
+    }
+#   endif
+#   else
     result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
                                     | (GC_pages_executable ? PROT_EXEC : 0),
                   GC_MMAP_FLAGS | OPT_MAP_ANON, zero_fd, 0/* offset */);
+#   endif
 #   undef IGNORE_PAGES_EXECUTABLE
 
     if (EXPECT(MAP_FAILED == result, FALSE)) {
