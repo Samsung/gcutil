@@ -324,7 +324,8 @@ struct GC_mark_custom_result {
  * Currently second choice is adopted,
  * but it can be changed in future for better performance.
  */
-typedef GC_word* (GC_get_next_pointer_proc)(GC_word* ptr, GC_word** next_ptr);
+typedef void (GC_get_next_pointer_proc)(GC_word* ptr, GC_word* end, GC_word** next_ptr,
+    GC_word** from, GC_word** to);
 GC_API struct GC_ms_entry* GC_mark_and_push_custom_iterable(GC_word* addr,
                                                    struct GC_ms_entry *mark_stack_ptr,
                                                    struct GC_ms_entry *mark_stack_limit,
