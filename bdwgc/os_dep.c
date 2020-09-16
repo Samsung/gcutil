@@ -431,7 +431,7 @@ GC_INNER char * GC_get_maps(void)
   {
     ptr_t data_end = DATAEND;
 
-#   if defined(ESCARGOT) && (defined(TIZEN) || defined(PLATFORM_ANDROID))
+#   if defined(ESCARGOT) && (defined(HOST_TIZEN) || defined(HOST_ANDROID))
       GC_data_start = DATAEND;
       return;
 #   endif
