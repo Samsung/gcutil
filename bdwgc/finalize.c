@@ -929,11 +929,16 @@ GC_API void GC_CALL GC_register_finalizer_unreachable(void * obj,
   {
     unsigned nesting_level = *(unsigned char *)&GC_finalizer_nested;
     if (nesting_level) {
+#if defined(ESCARGOT)
+      // disable nested call
+      return NULL;
+#else
       /* We are inside another GC_invoke_finalizers().          */
       /* Skip some implicitly-called GC_invoke_finalizers()     */
       /* depending on the nesting (recursion) level.            */
       if (++GC_finalizer_skipped < (1U << nesting_level)) return NULL;
       GC_finalizer_skipped = 0;
+#endif
     }
     *(char *)&GC_finalizer_nested = (char)(nesting_level + 1);
     return (unsigned char *)&GC_finalizer_nested;
