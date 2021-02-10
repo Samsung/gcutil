@@ -674,11 +674,16 @@ GC_INNER unsigned char *GC_check_finalizer_nested(void)
   GC_thread me = GC_lookup_thread(pthread_self());
   unsigned nesting_level = me->finalizer_nested;
   if (nesting_level) {
+#if defined(ESCARGOT)
+      // disable nested call
+      return NULL;
+#else
     /* We are inside another GC_invoke_finalizers().            */
     /* Skip some implicitly-called GC_invoke_finalizers()       */
     /* depending on the nesting (recursion) level.              */
     if (++me->finalizer_skipped < (1U << nesting_level)) return NULL;
     me->finalizer_skipped = 0;
+#endif
   }
   me->finalizer_nested = (unsigned char)(nesting_level + 1);
   return &me->finalizer_nested;
