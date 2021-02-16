@@ -1445,7 +1445,11 @@ GC_API_PRIV GC_FAR struct _GC_arrays GC_arrays;
 
 /* Object kinds: */
 #ifndef MAXOBJKINDS
+#if defined(ESCARGOT) && defined(GC_DEBUG)
+# define MAXOBJKINDS 32
+#else
 # define MAXOBJKINDS 16
+#endif
 #endif
 GC_EXTERN struct obj_kind {
    void **ok_freelist;  /* Array of free list headers for this kind of  */
