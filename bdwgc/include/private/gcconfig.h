@@ -55,6 +55,19 @@
 # define EXTERN_C_END /* empty */
 #endif
 
+#if defined(GC_THREAD_ISOLATE)
+# if defined(GC_THREADS)
+# error "GC_THREAD_ISOLATE cannot used with GC_THREADS"
+# endif
+#  if defined(_MSC_VER)
+#   define MAY_THREAD_LOCAL __declspec(thread)
+#  else
+#   define MAY_THREAD_LOCAL __thread
+#  endif
+#else /* GC_THREAD_ISOLATE */
+# define MAY_THREAD_LOCAL
+#endif /* GC_THREAD_ISOLATE */
+
 EXTERN_C_BEGIN
 
 /* Convenient internal macro to test version of Clang.  */
@@ -3268,7 +3281,7 @@ EXTERN_C_BEGIN
 #endif /* LINUX */
 
 #if defined(SEARCH_FOR_DATA_START)
-  extern ptr_t GC_data_start;
+  extern MAY_THREAD_LOCAL ptr_t GC_data_start;
 # define DATASTART GC_data_start
 #endif
 

@@ -381,7 +381,7 @@ static void *store_debug_info(void *p, size_t lb,
   }
 #endif /* !SHORT_DBG_HDRS */
 
-STATIC GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS] = {0};
+STATIC MAY_THREAD_LOCAL GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS] = {0};
 
 GC_API void GC_CALL GC_register_describe_type_fn(int kind,
                                                  GC_describe_type_fn fn)
@@ -528,7 +528,7 @@ GC_INNER void GC_start_debugging_inner(void)
   GC_register_displacement_inner((word)sizeof(oh));
 }
 
-size_t GC_debug_header_size = sizeof(oh);
+size_t MAY_THREAD_LOCAL GC_debug_header_size = sizeof(oh);
 
 GC_API void GC_CALL GC_debug_register_displacement(size_t offset)
 {
@@ -963,8 +963,8 @@ GC_API GC_ATTR_MALLOC void * GC_CALL
 #ifndef MAX_SMASHED
 # define MAX_SMASHED 20
 #endif
-STATIC ptr_t GC_smashed[MAX_SMASHED] = {0};
-STATIC unsigned GC_n_smashed = 0;
+STATIC MAY_THREAD_LOCAL ptr_t GC_smashed[MAX_SMASHED] = {0};
+STATIC MAY_THREAD_LOCAL unsigned GC_n_smashed = 0;
 
 STATIC void GC_add_smashed(ptr_t smashed)
 {

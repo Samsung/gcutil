@@ -419,4 +419,17 @@
 
 #endif /* GC_PTHREADS */
 
+#if defined(GC_THREAD_ISOLATE)
+# if defined(GC_THREADS)
+# error "GC_THREAD_ISOLATE cannot used with GC_THREADS"
+# endif
+#  if defined(_MSC_VER)
+#   define GC_MAY_THREAD_LOCAL __declspec(thread)
+#  else
+#   define GC_MAY_THREAD_LOCAL __thread
+#  endif
+#else /* GC_THREAD_ISOLATE */
+# define GC_MAY_THREAD_LOCAL
+#endif /* GC_THREAD_ISOLATE */
+
 #endif

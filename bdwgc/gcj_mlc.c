@@ -44,15 +44,15 @@
 #else
   STATIC
 #endif
-GC_bool GC_gcj_malloc_initialized = FALSE;
+MAY_THREAD_LOCAL GC_bool GC_gcj_malloc_initialized = FALSE;
 
-int GC_gcj_kind = 0;    /* Object kind for objects with descriptors     */
+int MAY_THREAD_LOCAL GC_gcj_kind = 0;    /* Object kind for objects with descriptors     */
                         /* in "vtable".                                 */
-int GC_gcj_debug_kind = 0;
+int MAY_THREAD_LOCAL GC_gcj_debug_kind = 0;
                         /* The kind of objects that is always marked    */
                         /* with a mark proc call.                       */
 
-GC_INNER ptr_t * GC_gcjobjfreelist = NULL;
+GC_INNER MAY_THREAD_LOCAL ptr_t * GC_gcjobjfreelist = NULL;
 
 STATIC struct GC_ms_entry * GC_gcj_fake_mark_proc(word * addr GC_ATTR_UNUSED,
                         struct GC_ms_entry *mark_stack_ptr,

@@ -102,9 +102,9 @@
 #endif
 
 #if !defined(NO_EXECUTE_PERMISSION)
-  STATIC GC_bool GC_pages_executable = TRUE;
+  STATIC MAY_THREAD_LOCAL GC_bool GC_pages_executable = TRUE;
 #else
-  STATIC GC_bool GC_pages_executable = FALSE;
+  STATIC MAY_THREAD_LOCAL GC_bool GC_pages_executable = FALSE;
 #endif
 #define IGNORE_PAGES_EXECUTABLE 1
                         /* Undefined on GC_pages_executable real use.   */
@@ -170,8 +170,8 @@ STATIC ssize_t GC_repeat_read(int fd, char *buf, size_t count)
 GC_INNER char * GC_get_maps(void)
 {
     ssize_t result;
-    static char *maps_buf = NULL;
-    static size_t maps_buf_sz = 1;
+    static MAY_THREAD_LOCAL char *maps_buf = NULL;
+    static MAY_THREAD_LOCAL size_t maps_buf_sz = 1;
     size_t maps_size;
 #   ifdef THREADS
       size_t old_maps_size = 0;
@@ -425,7 +425,7 @@ GC_INNER char * GC_get_maps(void)
     EXTERN_C_END
 # endif /* LINUX */
 
-  ptr_t GC_data_start = NULL;
+  MAY_THREAD_LOCAL ptr_t GC_data_start = NULL;
 
   GC_INNER void GC_init_linux_data_start(void)
   {
@@ -467,6 +467,10 @@ GC_INNER char * GC_get_maps(void)
 
 #ifdef ECOS
 
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
 # ifndef ECOS_GC_MEMORY_SIZE
 #   define ECOS_GC_MEMORY_SIZE (448 * 1024)
 # endif /* ECOS_GC_MEMORY_SIZE */
@@ -492,6 +496,11 @@ GC_INNER char * GC_get_maps(void)
 #endif /* ECOS */
 
 #if defined(NETBSD) && defined(__ELF__)
+
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
   ptr_t GC_data_start = NULL;
 
   EXTERN_C_BEGIN
@@ -518,6 +527,11 @@ GC_INNER char * GC_get_maps(void)
 #endif
 
 #ifdef OPENBSD
+
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
   static struct sigaction old_segv_act;
   STATIC JMP_BUF GC_jmp_buf_openbsd;
 
@@ -619,6 +633,10 @@ GC_INNER char * GC_get_maps(void)
 
 # ifdef OS2
 
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
 # include <stddef.h>
 
 # if !defined(__IBMC__) && !defined(__WATCOMC__) /* e.g. EMX */
@@ -701,7 +719,7 @@ struct o32_obj {
 # endif /* OS/2 */
 
 /* Find the page size */
-GC_INNER size_t GC_page_size = 0;
+GC_INNER MAY_THREAD_LOCAL size_t GC_page_size = 0;
 
 #if defined(MSWIN32) || defined(MSWINCE) || defined(CYGWIN32)
 # ifndef VER_PLATFORM_WIN32_CE
@@ -709,10 +727,10 @@ GC_INNER size_t GC_page_size = 0;
 # endif
 
 # if defined(MSWINCE) && defined(THREADS)
-    GC_INNER GC_bool GC_dont_query_stack_min = FALSE;
+    GC_INNER MAY_THREAD_LOCAL GC_bool GC_dont_query_stack_min = FALSE;
 # endif
 
-  GC_INNER SYSTEM_INFO GC_sysinfo;
+  GC_INNER MAY_THREAD_LOCAL SYSTEM_INFO GC_sysinfo;
 
   GC_INNER void GC_setpagesize(void)
   {
@@ -881,9 +899,9 @@ GC_INNER size_t GC_page_size = 0;
             static struct sigaction old_bus_act;
 #       endif
 #   else
-      static GC_fault_handler_t old_segv_handler;
+      static MAY_THREAD_LOCAL GC_fault_handler_t old_segv_handler;
 #     ifdef HAVE_SIGBUS
-        static GC_fault_handler_t old_bus_handler;
+        static MAY_THREAD_LOCAL GC_fault_handler_t old_bus_handler;
 #     endif
 #   endif
 
@@ -937,7 +955,7 @@ GC_INNER size_t GC_page_size = 0;
   /* Some tools to implement HEURISTIC2 */
 #   define MIN_PAGE_SIZE 256    /* Smallest conceivable page size, bytes */
 
-    GC_INNER JMP_BUF GC_jmp_buf;
+    GC_INNER MAY_THREAD_LOCAL JMP_BUF GC_jmp_buf;
 
     STATIC void GC_fault_handler(int sig GC_ATTR_UNUSED)
     {
@@ -976,7 +994,7 @@ GC_INNER size_t GC_page_size = 0;
     /* Requires allocation lock.                                */
     STATIC ptr_t GC_find_limit_with_bound(ptr_t p, GC_bool up, ptr_t bound)
     {
-        static volatile ptr_t result;
+        static MAY_THREAD_LOCAL volatile ptr_t result;
                 /* Safer if static, since otherwise it may not be       */
                 /* preserved across the longjmp.  Can safely be         */
                 /* static since it's only called with the               */
@@ -1620,8 +1638,8 @@ void GC_register_data_segments(void)
     typedef UINT (WINAPI * GetWriteWatch_type)(
                                 DWORD, PVOID, GC_ULONG_PTR /* SIZE_T */,
                                 PVOID *, GC_ULONG_PTR *, PULONG);
-    static GetWriteWatch_type GetWriteWatch_func;
-    static DWORD GetWriteWatch_alloc_flag;
+    static MAY_THREAD_LOCAL GetWriteWatch_type GetWriteWatch_func;
+    static MAY_THREAD_LOCAL DWORD GetWriteWatch_alloc_flag;
 
 #   define GC_GWW_AVAILABLE() (GetWriteWatch_func != NULL)
 
@@ -1720,12 +1738,12 @@ void GC_register_data_segments(void)
   /* and all real work is done by GC_register_dynamic_libraries.  Under */
   /* win32s, we cannot find the data segments associated with dll's.    */
   /* We register the main data segment here.                            */
-  GC_INNER GC_bool GC_no_win32_dlls = FALSE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_no_win32_dlls = FALSE;
         /* This used to be set for gcc, to avoid dealing with           */
         /* the structured exception handling issues.  But we now have   */
         /* assembly code to do that right.                              */
 
-  GC_INNER GC_bool GC_wnt = FALSE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_wnt = FALSE;
          /* This is a Windows NT derivative, i.e. NT, Win2K, XP or later. */
 
   GC_INNER void GC_init_win32(void)
@@ -1785,11 +1803,11 @@ void GC_register_data_segments(void)
   /* the malloc heap with HeapWalk on the default heap.  But that       */
   /* apparently works only for NT-based Windows.                        */
 
-  STATIC size_t GC_max_root_size = 100000; /* Appr. largest root size.  */
+  STATIC MAY_THREAD_LOCAL size_t GC_max_root_size = 100000; /* Appr. largest root size.  */
 
 # ifdef USE_WINALLOC
   /* In the long run, a better data structure would also be nice ...    */
-  STATIC struct GC_malloc_heap_list {
+  STATIC MAY_THREAD_LOCAL struct GC_malloc_heap_list {
     void * allocation_base;
     struct GC_malloc_heap_list *next;
   } *GC_malloc_heap_l = 0;
@@ -1854,7 +1872,7 @@ void GC_register_data_segments(void)
 
 # endif /* !REDIRECT_MALLOC */
 
-  STATIC word GC_n_heap_bases = 0;      /* See GC_heap_bases.   */
+  STATIC MAY_THREAD_LOCAL word GC_n_heap_bases = 0;      /* See GC_heap_bases.   */
 
   /* Is p the start of either the malloc heap, or of one of our */
   /* heap sections?                                             */
@@ -2146,7 +2164,7 @@ void GC_register_data_segments(void)
   STATIC ptr_t GC_unix_mmap_get_mem(size_t bytes)
   {
     void *result;
-    static ptr_t last_addr = HEAP_START;
+    static MAY_THREAD_LOCAL ptr_t last_addr = HEAP_START;
 
 #   ifndef USE_MMAP_ANON
       static GC_bool initialized = FALSE;
@@ -2748,7 +2766,7 @@ GC_INNER void GC_unmap_gap(ptr_t start1, size_t bytes1, ptr_t start2,
 /* environment, this is also responsible for marking from       */
 /* thread stacks.                                               */
 #ifndef THREADS
-  GC_push_other_roots_proc GC_push_other_roots = 0;
+  MAY_THREAD_LOCAL GC_push_other_roots_proc GC_push_other_roots = 0;
 #else /* THREADS */
 
 # ifdef PCR
@@ -2772,7 +2790,7 @@ PCR_ERes GC_push_old_obj(void *p, size_t size, PCR_Any data)
     return(PCR_ERes_okay);
 }
 
-extern struct PCR_MM_ProcsRep * GC_old_allocator;
+extern MAY_THREAD_LOCAL struct PCR_MM_ProcsRep * GC_old_allocator;
                                         /* defined in pcr_interface.c.  */
 
 STATIC void GC_CALLBACK GC_default_push_other_roots(void)
@@ -3106,16 +3124,16 @@ GC_API GC_push_other_roots_proc GC_CALL GC_get_push_other_roots(void)
 # endif
 
 #ifndef DARWIN
-  STATIC SIG_HNDLR_PTR GC_old_segv_handler = 0;
+  STATIC MAY_THREAD_LOCAL SIG_HNDLR_PTR GC_old_segv_handler = 0;
                         /* Also old MSWIN32 ACCESS_VIOLATION filter */
 # if defined(FREEBSD) || defined(HPUX) || defined(HURD) || defined(LINUX)
-    STATIC SIG_HNDLR_PTR GC_old_bus_handler = 0;
+    STATIC MAY_THREAD_LOCAL SIG_HNDLR_PTR GC_old_bus_handler = 0;
 #   ifndef LINUX
-      STATIC GC_bool GC_old_bus_handler_used_si = FALSE;
+      STATIC MAY_THREAD_LOCAL GC_bool GC_old_bus_handler_used_si = FALSE;
 #   endif
 # endif
 # if !defined(MSWIN32) && !defined(MSWINCE)
-    STATIC GC_bool GC_old_segv_handler_used_si = FALSE;
+    STATIC MAY_THREAD_LOCAL GC_bool GC_old_segv_handler_used_si = FALSE;
 # endif /* !MSWIN32 */
 #endif /* !DARWIN */
 
@@ -3526,6 +3544,10 @@ STATIC void GC_protect_heap(void)
 /* only some of the address space), but it avoids intercepting system   */
 /* calls.                                                               */
 
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
 # include <errno.h>
 # include <sys/types.h>
 # include <sys/signal.h>
@@ -3677,6 +3699,10 @@ GC_INLINE void GC_proc_read_dirty(GC_bool output_unneeded)
 
 # include "vd/PCR_VD.h"
 
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
 # define NPAGES (32*1024)       /* 128 MB */
 
 PCR_VD_DB GC_grungy_bits[NPAGES];
@@ -3701,7 +3727,7 @@ GC_INNER GC_bool GC_dirty_init(void)
 #endif /* PCR_VDB */
 
 #ifndef GC_DISABLE_INCREMENTAL
-  GC_INNER GC_bool GC_manual_vdb = FALSE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_manual_vdb = FALSE;
 
   /* Manually mark the page containing p as dirty.  Logically, this     */
   /* dirties the entire object.                                         */
@@ -3989,7 +4015,7 @@ typedef enum {
   /* This value is only used on the reply port. */
 # define ID_ACK 3
 
-  STATIC GC_mprotect_state_t GC_mprotect_state = GC_MP_NORMAL;
+  STATIC MAY_THREAD_LOCAL GC_mprotect_state_t GC_mprotect_state = GC_MP_NORMAL;
 
   /* The following should ONLY be called when the world is stopped.     */
   STATIC void GC_mprotect_thread_notify(mach_msg_id_t id)
@@ -4150,7 +4176,7 @@ STATIC void *GC_mprotect_thread(void *arg)
 
   /* Updates to this aren't atomic, but the SIGBUS'es seem pretty rare.    */
   /* Even if this doesn't get updated property, it isn't really a problem. */
-  STATIC int GC_sigbus_count = 0;
+  STATIC MAY_THREAD_LOCAL int GC_sigbus_count = 0;
 
   STATIC void GC_darwin_sigbus(int num, siginfo_t *sip, void *context)
   {
@@ -4687,7 +4713,7 @@ GC_INNER void GC_save_callers(struct callinfo info[NFRAMES])
 GC_INNER void GC_print_callers(struct callinfo info[NFRAMES])
 {
     int i;
-    static int reentry_count = 0;
+    static MAY_THREAD_LOCAL int reentry_count = 0;
     GC_bool stop = FALSE;
     DCL_LOCK_STATE;
 
@@ -4746,17 +4772,17 @@ GC_INNER void GC_print_callers(struct callinfo info[NFRAMES])
             {
                 FILE *pipe;
 #               define EXE_SZ 100
-                static char exe_name[EXE_SZ];
+                static MAY_THREAD_LOCAL char exe_name[EXE_SZ];
 #               define CMD_SZ 200
                 char cmd_buf[CMD_SZ];
 #               define RESULT_SZ 200
-                static char result_buf[RESULT_SZ];
+                static MAY_THREAD_LOCAL char result_buf[RESULT_SZ];
                 size_t result_len;
                 char *old_preload;
 #               define PRELOAD_SZ 200
                 char preload_buf[PRELOAD_SZ];
-                static GC_bool found_exe_name = FALSE;
-                static GC_bool will_fail = FALSE;
+                static MAY_THREAD_LOCAL GC_bool found_exe_name = FALSE;
+                static MAY_THREAD_LOCAL GC_bool will_fail = FALSE;
                 int ret_code;
                 /* Try to get it via a hairy and expensive scheme.      */
                 /* First we get the name of the executable:             */

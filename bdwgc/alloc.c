@@ -64,13 +64,13 @@
  * allocator.
  */
 
-word GC_non_gc_bytes = 0;  /* Number of bytes not intended to be collected */
+MAY_THREAD_LOCAL word GC_non_gc_bytes = 0;  /* Number of bytes not intended to be collected */
 
-word GC_gc_no = 0;
+MAY_THREAD_LOCAL word GC_gc_no = 0;
 
 #ifndef NO_CLOCK
-  static unsigned long full_gc_total_time = 0; /* in msecs, may wrap */
-  static GC_bool measure_performance = FALSE;
+  static MAY_THREAD_LOCAL unsigned long full_gc_total_time = 0; /* in msecs, may wrap */
+  static MAY_THREAD_LOCAL GC_bool measure_performance = FALSE;
                 /* Do performance measurements if set to true (e.g.,    */
                 /* accumulation of the total time of full collections). */
 
@@ -86,7 +86,7 @@ word GC_gc_no = 0;
 #endif /* !NO_CLOCK */
 
 #ifndef GC_DISABLE_INCREMENTAL
-  GC_INNER GC_bool GC_incremental = FALSE; /* By default, stop the world. */
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_incremental = FALSE; /* By default, stop the world. */
 #endif
 
 GC_API int GC_CALL GC_is_incremental_mode(void)
@@ -99,21 +99,22 @@ GC_API int GC_CALL GC_is_incremental_mode(void)
 #endif
 
 #if defined(GC_FULL_FREQ) && !defined(CPPCHECK)
-  int GC_full_freq = GC_FULL_FREQ;
+  int MAY_THREAD_LOCAL GC_full_freq = GC_FULL_FREQ;
 #else
-  int GC_full_freq = 19;   /* Every 20th collection is a full   */
+  int MAY_THREAD_LOCAL GC_full_freq = 19;
+                           /* Every 20th collection is a full   */
                            /* collection, whether we need it    */
                            /* or not.                           */
 #endif
 
-STATIC GC_bool GC_need_full_gc = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_need_full_gc = FALSE;
                            /* Need full GC do to heap growth.   */
 
 #ifdef THREAD_LOCAL_ALLOC
   GC_INNER GC_bool GC_world_stopped = FALSE;
 #endif
 
-STATIC word GC_used_heap_size_after_full = 0;
+STATIC MAY_THREAD_LOCAL word GC_used_heap_size_after_full = 0;
 
 /* GC_copyright symbol is externally visible. */
 EXTERN_C_BEGIN
@@ -148,15 +149,15 @@ GC_API unsigned GC_CALL GC_get_version(void)
 /* some more variables */
 
 #ifdef GC_DONT_EXPAND
-  int GC_dont_expand = TRUE;
+  MAY_THREAD_LOCAL int GC_dont_expand = TRUE;
 #else
-  int GC_dont_expand = FALSE;
+  MAY_THREAD_LOCAL int GC_dont_expand = FALSE;
 #endif
 
 #if defined(GC_FREE_SPACE_DIVISOR) && !defined(CPPCHECK)
-  word GC_free_space_divisor = GC_FREE_SPACE_DIVISOR; /* must be > 0 */
+  MAY_THREAD_LOCAL word GC_free_space_divisor = GC_FREE_SPACE_DIVISOR; /* must be > 0 */
 #else
-  word GC_free_space_divisor = 3;
+  MAY_THREAD_LOCAL word GC_free_space_divisor = 3;
 #endif
 
 GC_INNER int GC_CALLBACK GC_never_stop_func(void)
@@ -165,23 +166,24 @@ GC_INNER int GC_CALLBACK GC_never_stop_func(void)
 }
 
 #if defined(GC_TIME_LIMIT) && !defined(CPPCHECK)
-  unsigned long GC_time_limit = GC_TIME_LIMIT;
+  MAY_THREAD_LOCAL unsigned long GC_time_limit = GC_TIME_LIMIT;
                            /* We try to keep pause times from exceeding  */
                            /* this by much. In milliseconds.             */
 #else
-  unsigned long GC_time_limit = 50;
+  MAY_THREAD_LOCAL unsigned long GC_time_limit = 50;
 #endif
 
 #ifndef NO_CLOCK
-  STATIC CLOCK_TYPE GC_start_time = CLOCK_TYPE_INITIALIZER;
+  STATIC MAY_THREAD_LOCAL CLOCK_TYPE GC_start_time = CLOCK_TYPE_INITIALIZER;
                                 /* Time at which we stopped world.      */
                                 /* used only in GC_timeout_stop_func.   */
 #endif
 
-STATIC int GC_n_attempts = 0;   /* Number of attempts at finishing      */
+STATIC MAY_THREAD_LOCAL int GC_n_attempts = 0;
+                                /* Number of attempts at finishing      */
                                 /* collection within GC_time_limit.     */
 
-STATIC GC_stop_func GC_default_stop_func = GC_never_stop_func;
+STATIC MAY_THREAD_LOCAL GC_stop_func GC_default_stop_func = GC_never_stop_func;
                                 /* accessed holding the lock.           */
 
 GC_API void GC_CALL GC_set_stop_func(GC_stop_func stop_func)
@@ -209,7 +211,7 @@ GC_API GC_stop_func GC_CALL GC_get_stop_func(void)
   STATIC int GC_CALLBACK GC_timeout_stop_func (void)
   {
     CLOCK_TYPE current_time;
-    static unsigned count = 0;
+    static MAY_THREAD_LOCAL unsigned count = 0;
     unsigned long time_diff;
 
     if ((*GC_default_stop_func)())
@@ -232,7 +234,7 @@ GC_API GC_stop_func GC_CALL GC_get_stop_func(void)
   GC_INNER word GC_total_stacksize = 0; /* updated on every push_all_stacks */
 #endif
 
-static size_t min_bytes_allocd_minimum = 1;
+static MAY_THREAD_LOCAL size_t min_bytes_allocd_minimum = 1;
                         /* The lowest value returned by min_bytes_allocd(). */
 
 GC_API void GC_CALL GC_set_min_bytes_allocd(size_t value)
@@ -290,7 +292,7 @@ static word min_bytes_allocd(void)
             ? result : min_bytes_allocd_minimum;
 }
 
-STATIC word GC_non_gc_bytes_at_gc = 0;
+STATIC MAY_THREAD_LOCAL word GC_non_gc_bytes_at_gc = 0;
                 /* Number of explicitly managed bytes of storage        */
                 /* at last collection.                                  */
 
@@ -349,13 +351,13 @@ STATIC void GC_clear_a_few_frames(void)
 
 /* Heap size at which we need a collection to avoid expanding past      */
 /* limits used by blacklisting.                                         */
-STATIC word GC_collect_at_heapsize = GC_WORD_MAX;
+STATIC MAY_THREAD_LOCAL word GC_collect_at_heapsize = GC_WORD_MAX;
 
 /* Have we allocated enough to amortize a collection? */
 GC_INNER GC_bool GC_should_collect(void)
 {
-    static word last_min_bytes_allocd;
-    static word last_gc_no;
+    static MAY_THREAD_LOCAL word last_min_bytes_allocd;
+    static MAY_THREAD_LOCAL word last_gc_no;
     if (last_gc_no != GC_gc_no) {
       last_gc_no = GC_gc_no;
       last_min_bytes_allocd = min_bytes_allocd();
@@ -364,7 +366,7 @@ GC_INNER GC_bool GC_should_collect(void)
            || GC_heapsize >= GC_collect_at_heapsize);
 }
 
-/* STATIC */ GC_start_callback_proc GC_start_call_back = 0;
+/* STATIC */ MAY_THREAD_LOCAL GC_start_callback_proc GC_start_call_back = 0;
                         /* Called at start of full collections.         */
                         /* Not called if 0.  Called with the allocation */
                         /* lock held.  Not used by GC itself.           */
@@ -394,7 +396,7 @@ GC_INLINE void GC_notify_full_gc(void)
     }
 }
 
-STATIC GC_bool GC_is_full_gc = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_is_full_gc = FALSE;
 
 STATIC GC_bool GC_stopped_mark(GC_stop_func stop_func);
 STATIC void GC_finish_collection(void);
@@ -409,7 +411,7 @@ STATIC void GC_maybe_gc(void)
     GC_ASSERT(I_HOLD_LOCK());
     ASSERT_CANCEL_DISABLED();
     if (GC_should_collect()) {
-        static int n_partial_gcs = 0;
+        static MAY_THREAD_LOCAL int n_partial_gcs = 0;
 
         if (!GC_incremental) {
             /* TODO: If possible, GC_default_stop_func should be used here */
@@ -458,7 +460,7 @@ STATIC void GC_maybe_gc(void)
     }
 }
 
-STATIC GC_on_collection_event_proc GC_on_collection_event = 0;
+STATIC MAY_THREAD_LOCAL GC_on_collection_event_proc GC_on_collection_event = 0;
 
 GC_API void GC_CALL GC_set_on_collection_event(GC_on_collection_event_proc fn)
 {
@@ -588,10 +590,10 @@ GC_INNER GC_bool GC_try_to_collect_inner(GC_stop_func stop_func)
         /* how long it takes.  Doesn't count the initial root scan      */
         /* for a full GC.                                               */
 
-STATIC int GC_deficit = 0;/* The number of extra calls to GC_mark_some  */
+STATIC MAY_THREAD_LOCAL int GC_deficit = 0;/* The number of extra calls to GC_mark_some  */
                           /* that we have made.                         */
 
-STATIC int GC_rate = GC_RATE;
+STATIC MAY_THREAD_LOCAL int GC_rate = GC_RATE;
 
 GC_API void GC_CALL GC_set_rate(int value)
 {
@@ -604,7 +606,7 @@ GC_API int GC_CALL GC_get_rate(void)
     return GC_rate;
 }
 
-static int max_prior_attempts = MAX_PRIOR_ATTEMPTS;
+static MAY_THREAD_LOCAL int max_prior_attempts = MAX_PRIOR_ATTEMPTS;
 
 GC_API void GC_CALL GC_set_max_prior_attempts(int value)
 {
@@ -668,8 +670,8 @@ GC_INNER void GC_collect_a_little_inner(int n)
     RESTORE_CANCEL(cancel_state);
 }
 
-GC_INNER void (*GC_check_heap)(void) = 0;
-GC_INNER void (*GC_print_all_smashed)(void) = 0;
+GC_INNER MAY_THREAD_LOCAL void (*GC_check_heap)(void) = 0;
+GC_INNER MAY_THREAD_LOCAL void (*GC_print_all_smashed)(void) = 0;
 
 GC_API int GC_CALL GC_collect_a_little(void)
 {
@@ -688,8 +690,8 @@ GC_API int GC_CALL GC_collect_a_little(void)
   /* Variables for world-stop average delay time statistic computation. */
   /* "divisor" is incremented every world-stop and halved when reached  */
   /* its maximum (or upon "total_time" overflow).                       */
-  static unsigned world_stopped_total_time = 0;
-  static unsigned world_stopped_total_divisor = 0;
+  static MAY_THREAD_LOCAL unsigned world_stopped_total_time = 0;
+  static MAY_THREAD_LOCAL unsigned world_stopped_total_divisor = 0;
 # ifndef MAX_TOTAL_TIME_DIVISOR
     /* We shall not use big values here (so "outdated" delay time       */
     /* values would have less impact on "average" delay time value than */
@@ -977,7 +979,7 @@ STATIC void GC_clear_fl_marks(ptr_t q)
   void GC_check_tls(void);
 #endif
 
-GC_on_heap_resize_proc GC_on_heap_resize = 0;
+MAY_THREAD_LOCAL GC_on_heap_resize_proc GC_on_heap_resize = 0;
 
 /* Used for logging only. */
 GC_INLINE int GC_compute_heap_usage_percent(void)
@@ -1186,7 +1188,7 @@ GC_API void GC_CALL GC_gcollect(void)
     if (GC_have_errors) GC_print_all_errors();
 }
 
-STATIC word GC_heapsize_at_forced_unmap = 0;
+STATIC MAY_THREAD_LOCAL word GC_heapsize_at_forced_unmap = 0;
 
 GC_API void GC_CALL GC_gcollect_and_unmap(void)
 {
@@ -1197,11 +1199,11 @@ GC_API void GC_CALL GC_gcollect_and_unmap(void)
     (void)GC_try_to_collect_general(GC_never_stop_func, TRUE);
 }
 
-GC_INNER word GC_n_heap_sects = 0;
+GC_INNER MAY_THREAD_LOCAL word GC_n_heap_sects = 0;
                         /* Number of sections currently in heap. */
 
 #ifdef USE_PROC_FOR_LIBRARIES
-  GC_INNER word GC_n_memory = 0;
+  GC_INNER MAY_THREAD_LOCAL word GC_n_memory = 0;
                         /* Number of GET_MEM allocated memory sections. */
 #endif
 
@@ -1307,8 +1309,8 @@ GC_INNER void GC_add_to_heap(struct hblk *p, size_t bytes)
   }
 #endif
 
-void * GC_least_plausible_heap_addr = (void *)GC_WORD_MAX;
-void * GC_greatest_plausible_heap_addr = 0;
+MAY_THREAD_LOCAL void * GC_least_plausible_heap_addr = (void *)GC_WORD_MAX;
+MAY_THREAD_LOCAL void * GC_greatest_plausible_heap_addr = 0;
 
 GC_INLINE word GC_max(word x, word y)
 {
@@ -1320,14 +1322,14 @@ GC_INLINE word GC_min(word x, word y)
     return(x < y? x : y);
 }
 
-STATIC word GC_max_heapsize = 0;
+STATIC MAY_THREAD_LOCAL word GC_max_heapsize = 0;
 
 GC_API void GC_CALL GC_set_max_heap_size(GC_word n)
 {
     GC_max_heapsize = n;
 }
 
-GC_word GC_max_retries = 0;
+MAY_THREAD_LOCAL GC_word GC_max_retries = 0;
 
 /* This explicitly increases the size of the heap.  It is used          */
 /* internally, but may also be invoked from GC_expand_hp by the user.   */
@@ -1410,14 +1412,14 @@ GC_API int GC_CALL GC_expand_hp(size_t bytes)
     return(result);
 }
 
-word GC_fo_entries = 0; /* used also in extra/MacOS.c */
+MAY_THREAD_LOCAL word GC_fo_entries = 0; /* used also in extra/MacOS.c */
 
-GC_INNER unsigned GC_fail_count = 0;
+GC_INNER MAY_THREAD_LOCAL unsigned GC_fail_count = 0;
                         /* How many consecutive GC/expansion failures?  */
                         /* Reset by GC_allochblk.                       */
 
-static word last_fo_entries = 0;
-static word last_bytes_finalized = 0;
+static MAY_THREAD_LOCAL word last_fo_entries = 0;
+static MAY_THREAD_LOCAL word last_bytes_finalized = 0;
 
 /* Collect or expand heap in an attempt make the indicated number of    */
 /* free blocks available.  Should be called until the blocks are        */

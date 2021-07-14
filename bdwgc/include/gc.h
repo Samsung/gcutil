@@ -78,7 +78,7 @@ GC_API unsigned GC_CALL GC_get_version(void);
 /* Public read-only variables */
 /* The supplied getter functions are preferred for new code.            */
 
-GC_API GC_ATTR_DEPRECATED GC_word GC_gc_no;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_word GC_gc_no;
                         /* Counter incremented per collection.          */
                         /* Includes empty GCs at startup.               */
 GC_API GC_word GC_CALL GC_get_gc_no(void);
@@ -87,7 +87,7 @@ GC_API GC_word GC_CALL GC_get_gc_no(void);
                         /* avoid data races on multiprocessors.         */
 
 #ifdef GC_THREADS
-  GC_API GC_ATTR_DEPRECATED int GC_parallel;
+  GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_parallel;
                         /* GC is parallelized for performance on        */
                         /* multiprocessors.  Set to a non-zero value    */
                         /* only implicitly if collector is built with   */
@@ -112,7 +112,7 @@ GC_API GC_word GC_CALL GC_get_gc_no(void);
 /* The supplied setter and getter functions are preferred for new code. */
 
 typedef void * (GC_CALLBACK * GC_oom_func)(size_t /* bytes_requested */);
-GC_API GC_ATTR_DEPRECATED GC_oom_func GC_oom_fn;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_oom_func GC_oom_fn;
                         /* When there is insufficient memory to satisfy */
                         /* an allocation request, we return             */
                         /* (*GC_oom_fn)(size).  By default this just    */
@@ -126,7 +126,7 @@ GC_API void GC_CALL GC_set_oom_fn(GC_oom_func) GC_ATTR_NONNULL(1);
 GC_API GC_oom_func GC_CALL GC_get_oom_fn(void);
 
 typedef void (GC_CALLBACK * GC_on_heap_resize_proc)(GC_word /* new_size */);
-GC_API GC_ATTR_DEPRECATED GC_on_heap_resize_proc GC_on_heap_resize;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_on_heap_resize_proc GC_on_heap_resize;
                         /* Invoked when the heap grows or shrinks.      */
                         /* Called with the world stopped (and the       */
                         /* allocation lock held).  May be 0.            */
@@ -181,7 +181,7 @@ GC_API void GC_CALL GC_remove_event_callback(GC_on_event_proc fn, void* data);
                         /* acquire the GC lock (to avoid data races).   */
 #endif
 
-GC_API GC_ATTR_DEPRECATED int GC_find_leak;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_find_leak;
                         /* Set to true to turn on the leak-finding mode */
                         /* (do not actually garbage collect, but simply */
                         /* report inaccessible memory that was not      */
@@ -193,7 +193,7 @@ GC_API GC_ATTR_DEPRECATED int GC_find_leak;
 GC_API void GC_CALL GC_set_find_leak(int);
 GC_API int GC_CALL GC_get_find_leak(void);
 
-GC_API GC_ATTR_DEPRECATED int GC_all_interior_pointers;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_all_interior_pointers;
                         /* Arrange for pointers to object interiors to  */
                         /* be recognized as valid.  Typically should    */
                         /* not be changed after GC initialization (in   */
@@ -209,7 +209,7 @@ GC_API GC_ATTR_DEPRECATED int GC_all_interior_pointers;
 GC_API void GC_CALL GC_set_all_interior_pointers(int);
 GC_API int GC_CALL GC_get_all_interior_pointers(void);
 
-GC_API GC_ATTR_DEPRECATED int GC_finalize_on_demand;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_finalize_on_demand;
                         /* If nonzero, finalizers will only be run in   */
                         /* response to an explicit GC_invoke_finalizers */
                         /* call.  The default is determined by whether  */
@@ -219,7 +219,7 @@ GC_API GC_ATTR_DEPRECATED int GC_finalize_on_demand;
 GC_API void GC_CALL GC_set_finalize_on_demand(int);
 GC_API int GC_CALL GC_get_finalize_on_demand(void);
 
-GC_API GC_ATTR_DEPRECATED int GC_java_finalization;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_java_finalization;
                         /* Mark objects reachable from finalizable      */
                         /* objects in a separate post-pass.  This makes */
                         /* it a bit safer to use non-topologically-     */
@@ -232,7 +232,7 @@ GC_API void GC_CALL GC_set_java_finalization(int);
 GC_API int GC_CALL GC_get_java_finalization(void);
 
 typedef void (GC_CALLBACK * GC_finalizer_notifier_proc)(void);
-GC_API GC_ATTR_DEPRECATED GC_finalizer_notifier_proc GC_finalizer_notifier;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_finalizer_notifier_proc GC_finalizer_notifier;
                         /* Invoked by the collector when there are      */
                         /* objects to be finalized.  Invoked at most    */
                         /* once per GC cycle.  Never invoked unless     */
@@ -249,6 +249,7 @@ GC_API
 # ifndef GC_DONT_GC
     GC_ATTR_DEPRECATED
 # endif
+  GC_MAY_THREAD_LOCAL
   int GC_dont_gc;       /* != 0 ==> Don't collect.  In versions 6.2a1+, */
                         /* this overrides explicit GC_gcollect() calls. */
                         /* Used as a counter, so that nested enabling   */
@@ -259,14 +260,14 @@ GC_API
                         /* GC is disabled, GC_is_disabled() is          */
                         /* preferred for new code.                      */
 
-GC_API GC_ATTR_DEPRECATED int GC_dont_expand;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_dont_expand;
                         /* Do not expand the heap unless explicitly     */
                         /* requested or forced to.  The setter and      */
                         /* getter are unsynchronized.                   */
 GC_API void GC_CALL GC_set_dont_expand(int);
 GC_API int GC_CALL GC_get_dont_expand(void);
 
-GC_API GC_ATTR_DEPRECATED int GC_use_entire_heap;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_use_entire_heap;
                 /* Causes the non-incremental collector to use the      */
                 /* entire heap before collecting.  This was the only    */
                 /* option for GC versions < 5.0.  This sometimes        */
@@ -277,7 +278,7 @@ GC_API GC_ATTR_DEPRECATED int GC_use_entire_heap;
                 /* frequencies, and hence fewer instructions executed   */
                 /* in the collector.                                    */
 
-GC_API GC_ATTR_DEPRECATED int GC_full_freq;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_full_freq;
                             /* Number of partial collections between    */
                             /* full collections.  Matters only if       */
                             /* GC_is_incremental_mode().                */
@@ -294,7 +295,7 @@ GC_API GC_ATTR_DEPRECATED int GC_full_freq;
 GC_API void GC_CALL GC_set_full_freq(int);
 GC_API int GC_CALL GC_get_full_freq(void);
 
-GC_API GC_ATTR_DEPRECATED GC_word GC_non_gc_bytes;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_word GC_non_gc_bytes;
                         /* Bytes not considered candidates for          */
                         /* collection.  Used only to control scheduling */
                         /* of collections.  Updated by                  */
@@ -307,7 +308,7 @@ GC_API GC_ATTR_DEPRECATED GC_word GC_non_gc_bytes;
 GC_API void GC_CALL GC_set_non_gc_bytes(GC_word);
 GC_API GC_word GC_CALL GC_get_non_gc_bytes(void);
 
-GC_API GC_ATTR_DEPRECATED int GC_no_dls;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_no_dls;
                         /* Don't register dynamic library data segments. */
                         /* Wizards only.  Should be used only if the     */
                         /* application explicitly registers all roots.   */
@@ -319,7 +320,7 @@ GC_API GC_ATTR_DEPRECATED int GC_no_dls;
 GC_API void GC_CALL GC_set_no_dls(int);
 GC_API int GC_CALL GC_get_no_dls(void);
 
-GC_API GC_ATTR_DEPRECATED GC_word GC_free_space_divisor;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_word GC_free_space_divisor;
                         /* We try to make sure that we allocate at      */
                         /* least N/GC_free_space_divisor bytes between  */
                         /* collections, where N is twice the number     */
@@ -341,7 +342,7 @@ GC_API GC_ATTR_DEPRECATED GC_word GC_free_space_divisor;
 GC_API void GC_CALL GC_set_free_space_divisor(GC_word);
 GC_API GC_word GC_CALL GC_get_free_space_divisor(void);
 
-GC_API GC_ATTR_DEPRECATED GC_word GC_max_retries;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL GC_word GC_max_retries;
                         /* The maximum number of GCs attempted before   */
                         /* reporting out of memory after heap           */
                         /* expansion fails.  Initially 0.               */
@@ -353,7 +354,7 @@ GC_API void GC_CALL GC_set_max_retries(GC_word);
 GC_API GC_word GC_CALL GC_get_max_retries(void);
 
 
-GC_API GC_ATTR_DEPRECATED char *GC_stackbottom;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL char *GC_stackbottom;
                                 /* Cool end of user stack.              */
                                 /* May be set in the client prior to    */
                                 /* calling any GC_ routines.  This      */
@@ -369,7 +370,7 @@ GC_API GC_ATTR_DEPRECATED char *GC_stackbottom;
                                 /* GC_call_with_gc_active() and         */
                                 /* GC_register_my_thread() instead.     */
 
-GC_API GC_ATTR_DEPRECATED int GC_dont_precollect;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL int GC_dont_precollect;
                                 /* Do not collect as part of GC         */
                                 /* initialization.  Should be set only  */
                                 /* if the client wants a chance to      */
@@ -383,7 +384,7 @@ GC_API GC_ATTR_DEPRECATED int GC_dont_precollect;
 GC_API void GC_CALL GC_set_dont_precollect(int);
 GC_API int GC_CALL GC_get_dont_precollect(void);
 
-GC_API GC_ATTR_DEPRECATED unsigned long GC_time_limit;
+GC_API GC_ATTR_DEPRECATED GC_MAY_THREAD_LOCAL unsigned long GC_time_limit;
                                /* If incremental collection is enabled, */
                                /* We try to terminate collections       */
                                /* after this many milliseconds.  Not a  */
@@ -1691,10 +1692,10 @@ GC_API void GC_CALL GC_debug_ptr_store_and_dirty(void * /* p */,
                                                  const void * /* q */);
 
 /* Functions called to report pointer checking errors */
-GC_API void (GC_CALLBACK * GC_same_obj_print_proc)(void * /* p */,
+GC_API GC_MAY_THREAD_LOCAL void (GC_CALLBACK * GC_same_obj_print_proc)(void * /* p */,
                                                    void * /* q */);
-GC_API void (GC_CALLBACK * GC_is_valid_displacement_print_proc)(void *);
-GC_API void (GC_CALLBACK * GC_is_visible_print_proc)(void *);
+GC_API GC_MAY_THREAD_LOCAL void (GC_CALLBACK * GC_is_valid_displacement_print_proc)(void *);
+GC_API GC_MAY_THREAD_LOCAL void (GC_CALLBACK * GC_is_visible_print_proc)(void *);
 
 #ifdef GC_PTHREADS
   /* For pthread support, we generally need to intercept a number of    */

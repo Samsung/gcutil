@@ -17,6 +17,7 @@
  *  USA
 */
 
+#include "GCUtilInternal.h"
 #include "Allocator.h"
 
 #include <vector>
@@ -24,24 +25,28 @@
 
 GC_API void GC_CALL GC_set_on_collection_event(GC_on_collection_event_proc);
 
-std::vector<std::pair<GC_on_event_proc, void*>> g_gcEventCallbacks;
+std::vector<std::pair<GC_on_event_proc, void*>>& gcEventCallbacks()
+{
+    static MAY_THREAD_LOCAL std::vector<std::pair<GC_on_event_proc, void*>> eventCallbacks;
+    return eventCallbacks;
+}
 
 GC_API void GC_CALL GC_add_event_callback(GC_on_event_proc fn, void* data)
 {
-    g_gcEventCallbacks.push_back(std::make_pair(fn, data));
+    gcEventCallbacks().push_back(std::make_pair(fn, data));
 
     GC_set_on_collection_event([](GC_EventType evtType) {
-        for (size_t i = 0; i < g_gcEventCallbacks.size(); i ++) {
-            g_gcEventCallbacks[i].first(evtType, g_gcEventCallbacks[i].second);
+        for (size_t i = 0; i < gcEventCallbacks().size(); i ++) {
+            gcEventCallbacks()[i].first(evtType, gcEventCallbacks()[i].second);
         }
     });
 }
 
 GC_API void GC_CALL GC_remove_event_callback(GC_on_event_proc fn, void* data)
 {
-    auto iter = std::find(g_gcEventCallbacks.begin(), g_gcEventCallbacks.end(), std::make_pair(fn, data));
-    if (iter != g_gcEventCallbacks.end()) {
-        g_gcEventCallbacks.erase(iter);
+    auto iter = std::find(gcEventCallbacks().begin(), gcEventCallbacks().end(), std::make_pair(fn, data));
+    if (iter != gcEventCallbacks().end()) {
+        gcEventCallbacks().erase(iter);
     }
 }
 
@@ -71,27 +76,31 @@ struct HeapInfo {
 // This structure holds information about the size of the
 // allcoated memory area and a finalization user callback
 // with its user defined data.
-static std::map<void*, AllocInfo> addressTable;
+std::map<void*, AllocInfo>& addressTable()
+{
+    static MAY_THREAD_LOCAL std::map<void*, AllocInfo> table;
+    return table;
+}
 
-static HeapInfo heapInfo = { 0, 0, 0, 0, 0, 0, 0 };
+static MAY_THREAD_LOCAL HeapInfo heapInfo = { 0, 0, 0, 0, 0, 0, 0 };
 
 // The addressTable allocation should be in a separated function. This is
 // important, because the noise (helper structiore allcoations) can be
 // filtered out by the Freya tool of Valgrind.
 void createAddressEntry(void* address, size_t size)
 {
-    auto it = addressTable.find(address);
+    auto it = addressTable().find(address);
     // The address should not exist.
-    assert(it == addressTable.end());
+    assert(it == addressTable().end());
 
-    addressTable[address] = { nullptr, nullptr, size };
+    addressTable()[address] = { nullptr, nullptr, size };
 }
 
 void unregisterGCAddress(void* address, void* data)
 {
-    auto it = addressTable.find(address);
+    auto it = addressTable().find(address);
     // The address should exist.
-    assert(it != addressTable.end());
+    assert(it != addressTable().end());
 
     AllocInfo allocInfo = it->second;
     // Execute the user defined callback.
@@ -101,7 +110,7 @@ void unregisterGCAddress(void* address, void* data)
     heapInfo.allocated -= allocInfo.size;
     heapInfo.free_count++;
 
-    addressTable.erase(it);
+    addressTable().erase(it);
 
 #ifdef ESCARGOT_VALGRIND
     VALGRIND_FREELIKE_BLOCK(address, 0);
@@ -118,9 +127,9 @@ void unregisterGCAddress(void* address, void* data)
 
 void registerGCAddress(void* address, size_t siz)
 {
-    auto it = addressTable.find(address);
+    auto it = addressTable().find(address);
     // The address should not exist.
-    assert(it == addressTable.end());
+    assert(it == addressTable().end());
 
     createAddressEntry(address, siz);
 
@@ -170,9 +179,9 @@ void GC_register_finalizer_no_order_hook(void* obj, GC_finalization_proc fn,
                                          void* cd, GC_finalization_proc *ofn,
                                          void** ocd)
 {
-    auto it = addressTable.find(obj);
+    auto it = addressTable().find(obj);
     // The address should exist.
-    assert(it != addressTable.end());
+    assert(it != addressTable().end());
 
     (it->second).user_cb = fn;
     (it->second).user_data = cd;

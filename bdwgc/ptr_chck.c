@@ -24,7 +24,7 @@ STATIC void GC_CALLBACK GC_default_same_obj_print_proc(void * p, void * q)
                ": %p and %p are not in the same object", p, q);
 }
 
-void (GC_CALLBACK *GC_same_obj_print_proc) (void *, void *)
+MAY_THREAD_LOCAL void (GC_CALLBACK *GC_same_obj_print_proc) (void *, void *)
                 = GC_default_same_obj_print_proc;
 
 /* Check that p and q point to the same object.  Call           */
@@ -105,7 +105,7 @@ STATIC void GC_CALLBACK GC_default_is_valid_displacement_print_proc (void *p)
     ABORT_ARG1("GC_is_valid_displacement test failed", ": %p not valid", p);
 }
 
-void (GC_CALLBACK *GC_is_valid_displacement_print_proc)(void *) =
+MAY_THREAD_LOCAL void (GC_CALLBACK *GC_is_valid_displacement_print_proc)(void *) =
         GC_default_is_valid_displacement_print_proc;
 
 /* Check that if p is a pointer to a heap page, then it points to       */
@@ -154,7 +154,7 @@ STATIC void GC_CALLBACK GC_default_is_visible_print_proc(void * p)
     ABORT_ARG1("GC_is_visible test failed", ": %p not GC-visible", p);
 }
 
-void (GC_CALLBACK *GC_is_visible_print_proc)(void * p) =
+MAY_THREAD_LOCAL void (GC_CALLBACK *GC_is_visible_print_proc)(void * p) =
                 GC_default_is_visible_print_proc;
 
 #ifndef THREADS

@@ -22,12 +22,12 @@
   extern "C" {
 #endif
 
-GC_API void ** const GC_objfreelist_ptr;
-GC_API void ** const GC_aobjfreelist_ptr;
-GC_API void ** const GC_uobjfreelist_ptr;
+GC_API MAY_THREAD_LOCAL void ** GC_objfreelist_ptr;
+GC_API MAY_THREAD_LOCAL void ** GC_aobjfreelist_ptr;
+GC_API MAY_THREAD_LOCAL void ** GC_uobjfreelist_ptr;
 
 #ifdef GC_ATOMIC_UNCOLLECTABLE
-  GC_API void ** const GC_auobjfreelist_ptr;
+  GC_API MAY_THREAD_LOCAL void ** GC_auobjfreelist_ptr;
 #endif
 
 GC_API void GC_CALL GC_incr_bytes_allocd(size_t bytes);

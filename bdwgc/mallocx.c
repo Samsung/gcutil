@@ -41,11 +41,11 @@
 /* free lists from inlined allocators without including gc_priv.h        */
 /* or introducing dependencies on internal data structure layouts.       */
 #include "gc_alloc_ptrs.h"
-void ** const GC_objfreelist_ptr = GC_objfreelist;
-void ** const GC_aobjfreelist_ptr = GC_aobjfreelist;
-void ** const GC_uobjfreelist_ptr = GC_uobjfreelist;
+MAY_THREAD_LOCAL void ** GC_objfreelist_ptr = 0;
+MAY_THREAD_LOCAL void ** GC_aobjfreelist_ptr = 0;
+MAY_THREAD_LOCAL void ** GC_uobjfreelist_ptr = 0;
 # ifdef GC_ATOMIC_UNCOLLECTABLE
-    void ** const GC_auobjfreelist_ptr = GC_auobjfreelist;
+    MAY_THREAD_LOCAL void ** GC_auobjfreelist_ptr = 0;
 # endif
 
 GC_API int GC_CALL GC_get_kind_and_size(const void * p, size_t * psize)

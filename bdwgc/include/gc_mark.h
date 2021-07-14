@@ -116,8 +116,8 @@ typedef struct GC_ms_entry * (*GC_mark_proc)(GC_word * /* addr */,
                         /* held.                                        */
 #define GC_INDIR_PER_OBJ_BIAS 0x10
 
-GC_API void * GC_least_plausible_heap_addr;
-GC_API void * GC_greatest_plausible_heap_addr;
+GC_API GC_MAY_THREAD_LOCAL void * GC_least_plausible_heap_addr;
+GC_API GC_MAY_THREAD_LOCAL void * GC_greatest_plausible_heap_addr;
                         /* Bounds on the heap.  Guaranteed valid        */
                         /* Likely to include future heap expansion.     */
                         /* Hence usually includes not-yet-mapped        */
@@ -152,7 +152,7 @@ GC_API struct GC_ms_entry * GC_CALL GC_mark_and_push(void * /* obj */,
            (GC_word)(obj) <= (GC_word)GC_greatest_plausible_heap_addr ? \
            GC_mark_and_push(obj, msp, lim, src) : (msp))
 
-GC_API size_t GC_debug_header_size;
+GC_API GC_MAY_THREAD_LOCAL size_t GC_debug_header_size;
        /* The size of the header added to objects allocated through    */
        /* the GC_debug routines.                                       */
        /* Defined as a variable so that client mark procedures don't   */

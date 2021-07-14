@@ -48,7 +48,7 @@
 /* determine whether a DSO really needs to be scanned by the GC.        */
 /* 0 means no filter installed.  May be unused on some platforms.       */
 /* FIXME: Add filter support for more platforms.                        */
-STATIC GC_has_static_roots_func GC_has_static_roots = 0;
+STATIC MAY_THREAD_LOCAL GC_has_static_roots_func GC_has_static_roots = 0;
 
 #if (defined(DYNAMIC_LOADING) || defined(MSWIN32) || defined(MSWINCE) \
     || defined(CYGWIN32)) && !defined(PCR)
@@ -474,8 +474,8 @@ GC_INNER GC_bool GC_register_main_static_data(void)
       ptr_t end2;
     } load_segs[MAX_LOAD_SEGS];
 
-    static int n_load_segs;
-    static GC_bool load_segs_overflow;
+    static MAY_THREAD_LOCAL int n_load_segs;
+    static MAY_THREAD_LOCAL GC_bool load_segs_overflow;
 # endif /* PT_GNU_RELRO */
 
 STATIC int GC_register_dynlib_callback(struct dl_phdr_info * info,
@@ -706,7 +706,7 @@ EXTERN_C_END
 STATIC struct link_map *
 GC_FirstDLOpenedLinkMap(void)
 {
-    static struct link_map *cachedResult = 0;
+    static MAY_THREAD_LOCAL struct link_map *cachedResult = 0;
 
     if (0 == COVERT_DATAFLOW(_DYNAMIC)) {
         /* _DYNAMIC symbol not resolved. */
@@ -811,10 +811,10 @@ GC_INNER void GC_register_dynamic_libraries(void)
 /* worry about.  This may also work under other SVR4 variants.          */
 GC_INNER void GC_register_dynamic_libraries(void)
 {
-    static int fd = -1;
+    static MAY_THREAD_LOCAL int fd = -1;
     char buf[30];
-    static prmap_t * addr_map = 0;
-    static int current_sz = 0;  /* Number of records currently in addr_map */
+    static MAY_THREAD_LOCAL prmap_t * addr_map = 0;
+    static MAY_THREAD_LOCAL int current_sz = 0;  /* Number of records currently in addr_map */
     int needed_sz = 0;          /* Required size of addr_map            */
     int i;
     long flags;
