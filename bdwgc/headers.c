@@ -24,11 +24,11 @@
  * level tree.
  */
 
-STATIC bottom_index * GC_all_bottom_indices = 0;
+STATIC MAY_THREAD_LOCAL bottom_index * GC_all_bottom_indices = 0;
                         /* Pointer to the first (lowest address)        */
                         /* bottom_index.  Assumes the lock is held.     */
 
-STATIC bottom_index * GC_all_bottom_indices_end = 0;
+STATIC MAY_THREAD_LOCAL bottom_index * GC_all_bottom_indices_end = 0;
                         /* Pointer to the last (highest address)        */
                         /* bottom_index.  Assumes the lock is held.     */
 
@@ -110,7 +110,7 @@ GC_INNER hdr *
 /* Routines to dynamically allocate collector data structures that will */
 /* never be freed.                                                      */
 
-static ptr_t scratch_free_ptr = 0;
+static MAY_THREAD_LOCAL ptr_t scratch_free_ptr = 0;
 
 /* GC_scratch_last_end_ptr is end point of last obtained scratch area.  */
 /* GC_scratch_end_ptr is end point of current scratch area.             */
@@ -162,7 +162,7 @@ GC_INNER ptr_t GC_scratch_alloc(size_t bytes)
     }
 }
 
-static hdr * hdr_free_list = 0;
+static MAY_THREAD_LOCAL hdr * hdr_free_list = 0;
 
 /* Return an uninitialized header */
 static hdr * alloc_hdr(void)

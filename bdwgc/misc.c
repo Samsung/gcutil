@@ -76,103 +76,103 @@
   __thread unsigned char GC_cancel_disable_count = 0;
 #endif
 
-GC_FAR struct _GC_arrays GC_arrays /* = { 0 } */;
+GC_FAR MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* = { 0 } */;
 
-GC_INNER GC_bool GC_debugging_started = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_debugging_started = FALSE;
                 /* defined here so we don't have to load dbg_mlc.o */
 
-ptr_t GC_stackbottom = 0;
+ptr_t MAY_THREAD_LOCAL GC_stackbottom = 0;
 
 #ifdef IA64
-  ptr_t GC_register_stackbottom = 0;
+  ptr_t MAY_THREAD_LOCAL GC_register_stackbottom = 0;
 #endif
 
-int GC_dont_gc = FALSE;
+int MAY_THREAD_LOCAL GC_dont_gc = FALSE;
 
-int GC_dont_precollect = FALSE;
+int MAY_THREAD_LOCAL GC_dont_precollect = FALSE;
 
-GC_bool GC_quiet = 0; /* used also in pcr_interface.c */
+GC_bool MAY_THREAD_LOCAL GC_quiet = 0; /* used also in pcr_interface.c */
 
 #if !defined(NO_CLOCK) || !defined(SMALL_CONFIG)
-  int GC_print_stats = 0;
+  int MAY_THREAD_LOCAL GC_print_stats = 0;
 #endif
 
 #ifdef GC_PRINT_BACK_HEIGHT
-  GC_INNER GC_bool GC_print_back_height = TRUE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_print_back_height = TRUE;
 #else
-  GC_INNER GC_bool GC_print_back_height = FALSE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_print_back_height = FALSE;
 #endif
 
 #ifndef NO_DEBUGGING
 # ifdef GC_DUMP_REGULARLY
-    GC_INNER GC_bool GC_dump_regularly = TRUE;
+    GC_INNER MAY_THREAD_LOCAL GC_bool GC_dump_regularly = TRUE;
                                 /* Generate regular debugging dumps. */
 # else
-    GC_INNER GC_bool GC_dump_regularly = FALSE;
+    GC_INNER MAY_THREAD_LOCAL GC_bool GC_dump_regularly = FALSE;
 # endif
 # ifndef NO_CLOCK
-    STATIC CLOCK_TYPE GC_init_time;
+    STATIC MAY_THREAD_LOCAL CLOCK_TYPE GC_init_time;
                 /* The time that the GC was initialized at.     */
 # endif
 #endif /* !NO_DEBUGGING */
 
 #ifdef KEEP_BACK_PTRS
-  GC_INNER long GC_backtraces = 0;
+  GC_INNER MAY_THREAD_LOCAL long GC_backtraces = 0;
                 /* Number of random backtraces to generate for each GC. */
 #endif
 
 #ifdef FIND_LEAK
-  int GC_find_leak = 1;
+  int MAY_THREAD_LOCAL GC_find_leak = 1;
 #else
-  int GC_find_leak = 0;
+  int MAY_THREAD_LOCAL GC_find_leak = 0;
 #endif
 
 #ifndef SHORT_DBG_HDRS
 # ifdef GC_FINDLEAK_DELAY_FREE
-    GC_INNER GC_bool GC_findleak_delay_free = TRUE;
+    GC_INNER MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free = TRUE;
 # else
-    GC_INNER GC_bool GC_findleak_delay_free = FALSE;
+    GC_INNER MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free = FALSE;
 # endif
 #endif /* !SHORT_DBG_HDRS */
 
 #ifdef ESCARGOT
-  int GC_all_interior_pointers = 0;
+  int MAY_THREAD_LOCAL GC_all_interior_pointers = 0;
 #else
   #ifdef ALL_INTERIOR_POINTERS
-    int GC_all_interior_pointers = 1;
+    int MAY_THREAD_LOCAL GC_all_interior_pointers = 1;
   #else
-    int GC_all_interior_pointers = 0;
+    int MAY_THREAD_LOCAL GC_all_interior_pointers = 0;
   #endif
 #endif
 
 #ifdef FINALIZE_ON_DEMAND
-  int GC_finalize_on_demand = 1;
+  int MAY_THREAD_LOCAL GC_finalize_on_demand = 1;
 #else
-  int GC_finalize_on_demand = 0;
+  int MAY_THREAD_LOCAL GC_finalize_on_demand = 0;
 #endif
 
 #ifdef JAVA_FINALIZATION
-  int GC_java_finalization = 1;
+  int MAY_THREAD_LOCAL GC_java_finalization = 1;
 #else
-  int GC_java_finalization = 0;
+  int MAY_THREAD_LOCAL GC_java_finalization = 0;
 #endif
 
 /* All accesses to it should be synchronized to avoid data races.       */
-GC_finalizer_notifier_proc GC_finalizer_notifier =
+MAY_THREAD_LOCAL GC_finalizer_notifier_proc GC_finalizer_notifier =
                                         (GC_finalizer_notifier_proc)0;
 
 #ifdef GC_FORCE_UNMAP_ON_GCOLLECT
   /* Has no effect unless USE_MUNMAP.                           */
   /* Has no effect on implicitly-initiated garbage collections. */
-  GC_INNER GC_bool GC_force_unmap_on_gcollect = TRUE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_force_unmap_on_gcollect = TRUE;
 #else
-  GC_INNER GC_bool GC_force_unmap_on_gcollect = FALSE;
+  GC_INNER MAY_THREAD_LOCAL GC_bool GC_force_unmap_on_gcollect = FALSE;
 #endif
 
 #ifndef GC_LARGE_ALLOC_WARN_INTERVAL
 # define GC_LARGE_ALLOC_WARN_INTERVAL 5
 #endif
-GC_INNER long GC_large_alloc_warn_interval = GC_LARGE_ALLOC_WARN_INTERVAL;
+GC_INNER MAY_THREAD_LOCAL long GC_large_alloc_warn_interval = GC_LARGE_ALLOC_WARN_INTERVAL;
                         /* Interval between unsuppressed warnings.      */
 
 STATIC void * GC_CALLBACK GC_default_oom_fn(
@@ -182,14 +182,14 @@ STATIC void * GC_CALLBACK GC_default_oom_fn(
 }
 
 /* All accesses to it should be synchronized to avoid data races.       */
-GC_oom_func GC_oom_fn = GC_default_oom_fn;
+MAY_THREAD_LOCAL GC_oom_func GC_oom_fn = GC_default_oom_fn;
 
 #ifdef CAN_HANDLE_FORK
 # ifdef HANDLE_FORK
-    GC_INNER int GC_handle_fork = 1;
+    GC_INNER MAY_THREAD_LOCAL int GC_handle_fork = 1;
                         /* The value is examined by GC_thr_init.        */
 # else
-    GC_INNER int GC_handle_fork = FALSE;
+    GC_INNER MAY_THREAD_LOCAL int GC_handle_fork = FALSE;
 # endif
 
 #elif !defined(HAVE_NO_FORK)
@@ -286,14 +286,14 @@ STATIC void GC_init_size_map(void)
 # ifdef THREADS
 #   define BIG_CLEAR_SIZE 2048  /* Clear this much now and then.        */
 # else
-    STATIC word GC_stack_last_cleared = 0; /* GC_no when we last did this */
-    STATIC ptr_t GC_min_sp = NULL;
+    STATIC MAY_THREAD_LOCAL word GC_stack_last_cleared = 0; /* GC_no when we last did this */
+    STATIC MAY_THREAD_LOCAL ptr_t GC_min_sp = NULL;
                         /* Coolest stack pointer value from which       */
                         /* we've already cleared the stack.             */
-    STATIC ptr_t GC_high_water = NULL;
+    STATIC MAY_THREAD_LOCAL ptr_t GC_high_water = NULL;
                         /* "hottest" stack pointer value we have seen   */
                         /* recently.  Degrades over time.               */
-    STATIC word GC_bytes_allocd_at_reset = 0;
+    STATIC MAY_THREAD_LOCAL word GC_bytes_allocd_at_reset = 0;
 #   define DEGRADE_RATE 50
 # endif
 
@@ -536,7 +536,7 @@ GC_API void GC_CALL GC_get_heap_usage_safe(GC_word *pheap_size,
   UNLOCK();
 }
 
-  GC_INNER word GC_reclaimed_bytes_before_gc = 0;
+  GC_INNER MAY_THREAD_LOCAL word GC_reclaimed_bytes_before_gc = 0;
 
   /* Fill in GC statistics provided the destination is of enough size.  */
   static void fill_prof_stats(struct GC_prof_stats_s *pstats)
@@ -641,12 +641,12 @@ GC_API void GC_CALL GC_get_heap_usage_safe(GC_word *pheap_size,
 
 #ifdef GC_READ_ENV_FILE
   /* This works for Win32/WinCE for now.  Really useful only for WinCE. */
-  STATIC char *GC_envfile_content = NULL;
+  STATIC MAY_THREAD_LOCAL char *GC_envfile_content = NULL;
                         /* The content of the GC "env" file with CR and */
                         /* LF replaced to '\0'.  NULL if the file is    */
                         /* missing or empty.  Otherwise, always ends    */
                         /* with '\0'.                                   */
-  STATIC unsigned GC_envfile_length = 0;
+  STATIC MAY_THREAD_LOCAL unsigned GC_envfile_length = 0;
                         /* Length of GC_envfile_content (if non-NULL).  */
 
 # ifndef GC_ENVFILE_MAXLEN
@@ -742,7 +742,7 @@ GC_API void GC_CALL GC_get_heap_usage_safe(GC_word *pheap_size,
   }
 #endif /* GC_READ_ENV_FILE */
 
-GC_INNER GC_bool GC_is_initialized = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_is_initialized = FALSE;
 
 GC_API int GC_CALL GC_is_init_called(void)
 {
@@ -760,7 +760,7 @@ GC_API int GC_CALL GC_is_init_called(void)
     /* GC_find_leak cannot be used for this purpose as otherwise        */
     /* TSan finds a data race (between GC_default_on_abort and, e.g.,   */
     /* GC_finish_collection).                                           */
-    static GC_bool skip_gc_atexit = FALSE;
+    static MAY_THREAD_LOCAL GC_bool skip_gc_atexit = FALSE;
 # else
 #   define skip_gc_atexit FALSE
 # endif
@@ -788,7 +788,7 @@ GC_API int GC_CALL GC_is_init_called(void)
     }
   }
 
-  static GC_bool installed_looping_handler = FALSE;
+  static MAY_THREAD_LOCAL GC_bool installed_looping_handler = FALSE;
 
   static void maybe_install_looping_handler(void)
   {
@@ -810,9 +810,9 @@ GC_API int GC_CALL GC_is_init_called(void)
 #if !defined(OS2) && !defined(MACOS) && !defined(GC_ANDROID_LOG) \
     && !defined(NN_PLATFORM_CTR) && !defined(NINTENDO_SWITCH) \
     && !defined(MSWIN32) && !defined(MSWINCE)
-  STATIC int GC_stdout = GC_DEFAULT_STDOUT_FD;
-  STATIC int GC_stderr = GC_DEFAULT_STDERR_FD;
-  STATIC int GC_log = GC_DEFAULT_STDERR_FD;
+  STATIC MAY_THREAD_LOCAL int GC_stdout = GC_DEFAULT_STDOUT_FD;
+  STATIC MAY_THREAD_LOCAL int GC_stderr = GC_DEFAULT_STDERR_FD;
+  STATIC MAY_THREAD_LOCAL int GC_log = GC_DEFAULT_STDERR_FD;
 
   GC_API void GC_CALL GC_set_log_fd(int fd)
   {
@@ -849,9 +849,9 @@ GC_API int GC_CALL GC_is_init_called(void)
 
 #ifndef SMALL_CONFIG
 # ifdef MANUAL_VDB
-    static GC_bool manual_vdb_allowed = TRUE;
+    static MAY_THREAD_LOCAL GC_bool manual_vdb_allowed = TRUE;
 # else
-    static GC_bool manual_vdb_allowed = FALSE;
+    static MAY_THREAD_LOCAL GC_bool manual_vdb_allowed = FALSE;
 # endif
 
   GC_API void GC_CALL GC_set_manual_vdb_allowed(int value)
@@ -902,6 +902,8 @@ STATIC word GC_parse_mem_size_arg(const char *str)
 
 #define GC_LOG_STD_NAME "gc.log"
 
+#include "gc_alloc_ptrs.h"
+
 GC_API void GC_CALL GC_init(void)
 {
     /* LOCK(); -- no longer does anything this early. */
@@ -912,6 +914,21 @@ GC_API void GC_CALL GC_init(void)
 #   endif
 
     if (EXPECT(GC_is_initialized, TRUE)) return;
+
+    GC_obj_kinds[0].ok_freelist = &GC_aobjfreelist[0];
+    GC_obj_kinds[1].ok_freelist = &GC_objfreelist[0];
+    GC_obj_kinds[2].ok_freelist = &GC_uobjfreelist[0];
+#   ifdef GC_ATOMIC_UNCOLLECTABLE
+      GC_obj_kinds[3].ok_freelist = &GC_auobjfreelist[0];
+#   endif
+
+    GC_objfreelist_ptr = GC_objfreelist;
+    GC_aobjfreelist_ptr = GC_aobjfreelist;
+    GC_uobjfreelist_ptr = GC_uobjfreelist;
+# ifdef GC_ATOMIC_UNCOLLECTABLE
+    GC_auobjfreelist_ptr = GC_auobjfreelist;
+# endif
+
 #   ifdef REDIRECT_MALLOC
       {
         static GC_bool init_started = FALSE;
@@ -1672,9 +1689,9 @@ GC_API void GC_CALL GC_enable_incremental(void)
 # define WRITE(f, buf, len) GC_write(buf, len)
 
 #elif defined(OS2) || defined(MACOS)
-  STATIC FILE * GC_stdout = NULL;
-  STATIC FILE * GC_stderr = NULL;
-  STATIC FILE * GC_log = NULL;
+  STATIC MAY_THREAD_LOCAL FILE * GC_stdout = NULL;
+  STATIC MAY_THREAD_LOCAL FILE * GC_stderr = NULL;
+  STATIC MAY_THREAD_LOCAL FILE * GC_log = NULL;
 
   /* Initialize GC_log (and the friends) passed to GC_write().  */
   STATIC void GC_set_files(void)
@@ -1877,7 +1894,7 @@ STATIC void GC_CALLBACK GC_default_warn_proc(char *msg, GC_word arg)
     GC_warn_printf(msg, arg);
 }
 
-GC_INNER GC_warn_proc GC_current_warn_proc = GC_default_warn_proc;
+GC_INNER MAY_THREAD_LOCAL GC_warn_proc GC_current_warn_proc = GC_default_warn_proc;
 
 /* This is recommended for production code (release). */
 GC_API void GC_CALLBACK GC_ignore_warn_proc(char *msg, GC_word arg)
@@ -1961,7 +1978,7 @@ GC_API GC_warn_proc GC_CALL GC_get_warn_proc(void)
 #   endif
   }
 
-  GC_abort_func GC_on_abort = GC_default_on_abort;
+  MAY_THREAD_LOCAL GC_abort_func GC_on_abort = GC_default_on_abort;
 
   GC_API void GC_CALL GC_set_abort_func(GC_abort_func fn)
   {
@@ -2144,13 +2161,13 @@ GC_API void * GC_CALL GC_call_with_stack_base(GC_stack_base_func fn, void *arg)
 
 #ifndef THREADS
 
-GC_INNER ptr_t GC_blocked_sp = NULL;
+GC_INNER MAY_THREAD_LOCAL ptr_t GC_blocked_sp = NULL;
         /* NULL value means we are not inside GC_do_blocking() call. */
 # ifdef IA64
-    STATIC ptr_t GC_blocked_register_sp = NULL;
+    STATIC MAY_THREAD_LOCAL ptr_t GC_blocked_register_sp = NULL;
 # endif
 
-GC_INNER struct GC_traced_stack_sect_s *GC_traced_stack_sect = NULL;
+GC_INNER MAY_THREAD_LOCAL struct GC_traced_stack_sect_s *GC_traced_stack_sect = NULL;
 
 /* This is nearly the same as in win32_threads.c        */
 GC_API void * GC_CALL GC_call_with_gc_active(GC_fn_type fn,

@@ -37,19 +37,19 @@
 
 /* Pointers to individual tables.  We replace one table by another by   */
 /* switching these pointers.                                            */
-STATIC word * GC_old_normal_bl = NULL;
+STATIC MAY_THREAD_LOCAL word * GC_old_normal_bl = NULL;
                 /* Nonstack false references seen at last full          */
                 /* collection.                                          */
-STATIC word * GC_incomplete_normal_bl = NULL;
+STATIC MAY_THREAD_LOCAL word * GC_incomplete_normal_bl = NULL;
                 /* Nonstack false references seen since last            */
                 /* full collection.                                     */
-STATIC word * GC_old_stack_bl = NULL;
-STATIC word * GC_incomplete_stack_bl = NULL;
+STATIC MAY_THREAD_LOCAL word * GC_old_stack_bl = NULL;
+STATIC MAY_THREAD_LOCAL word * GC_incomplete_stack_bl = NULL;
 
-STATIC word GC_total_stack_black_listed = 0;
+STATIC MAY_THREAD_LOCAL word GC_total_stack_black_listed = 0;
                         /* Number of bytes on stack blacklist.  */
 
-GC_INNER word GC_black_list_spacing = MINHINCR * HBLKSIZE;
+GC_INNER MAY_THREAD_LOCAL word GC_black_list_spacing = MINHINCR * HBLKSIZE;
                         /* Initial rough guess. */
 
 STATIC void GC_clear_bl(word *);
@@ -65,7 +65,7 @@ GC_INNER void GC_default_print_heap_obj_proc(ptr_t p)
                     IS_UNCOLLECTABLE(kind) ? "uncollectable" : "composite");
 }
 
-GC_INNER void (*GC_print_heap_obj)(ptr_t p) = GC_default_print_heap_obj_proc;
+GC_INNER MAY_THREAD_LOCAL void (*GC_print_heap_obj)(ptr_t p) = GC_default_print_heap_obj_proc;
 
 #ifdef PRINT_BLACK_LIST
   STATIC void GC_print_blacklisted_ptr(word p, ptr_t source,

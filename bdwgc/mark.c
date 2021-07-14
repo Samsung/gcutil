@@ -47,7 +47,7 @@ void GC_noop6(word arg1 GC_ATTR_UNUSED, word arg2 GC_ATTR_UNUSED,
 # endif
 }
 
-volatile word GC_noop_sink;
+volatile MAY_THREAD_LOCAL word GC_noop_sink;
 
 /* Single argument version, robust against whole program analysis. */
 GC_ATTR_NO_SANITIZE_THREAD
@@ -58,20 +58,18 @@ GC_API void GC_CALL GC_noop1(word x)
 
 /* mark_proc GC_mark_procs[MAX_MARK_PROCS] = {0} -- declared in gc_priv.h */
 
-GC_INNER unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
+GC_INNER MAY_THREAD_LOCAL unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
 
 /* Initialize GC_obj_kinds properly and standard free lists properly.   */
-/* This must be done statically since they may be accessed before       */
-/* GC_init is called.                                                   */
 /* It's done here, since we need to deal with mark descriptors.         */
-GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
-/* PTRFREE */ { &GC_aobjfreelist[0], 0 /* filled in dynamically */,
+GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
+/* PTRFREE */ { 0, 0 /* filled in dynamically */,
                 /* 0 | */ GC_DS_LENGTH, FALSE, FALSE
 #ifdef ESCARGOT
                 /*, */ OK_EAGER_SWEEP_INITZ
 #endif
                 /*, */ OK_DISCLAIM_INITZ },
-/* NORMAL */  { &GC_objfreelist[0], 0,
+/* NORMAL */  { 0, 0,
                 /* 0 | */ GC_DS_LENGTH,
                                 /* adjusted in GC_init for EXTRA_BYTES  */
                 TRUE /* add length to descr */, TRUE
@@ -80,14 +78,14 @@ GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
 #endif
                 /*, */ OK_DISCLAIM_INITZ },
 /* UNCOLLECTABLE */
-              { &GC_uobjfreelist[0], 0,
+              { 0, 0,
                 /* 0 | */ GC_DS_LENGTH, TRUE /* add length to descr */, TRUE
 #ifdef ESCARGOT
                 /*, */ OK_EAGER_SWEEP_INITZ
 #endif
                 /*, */ OK_DISCLAIM_INITZ },
 # ifdef GC_ATOMIC_UNCOLLECTABLE
-              { &GC_auobjfreelist[0], 0,
+              { 0, 0,
                 /* 0 | */ GC_DS_LENGTH, FALSE /* add length to descr */, FALSE
 #ifdef ESCARGOT
                 /*, */ OK_EAGER_SWEEP_INITZ
@@ -96,7 +94,7 @@ GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
 # endif
 };
 
-GC_INNER unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
+GC_INNER MAY_THREAD_LOCAL unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
 
 # ifndef INITIAL_MARK_STACK_SIZE
 #   define INITIAL_MARK_STACK_SIZE (1*HBLKSIZE)
@@ -109,13 +107,13 @@ GC_INNER unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
 # endif
 
 #if !defined(GC_DISABLE_INCREMENTAL)
-  STATIC word GC_n_rescuing_pages = 0;
+  STATIC MAY_THREAD_LOCAL word GC_n_rescuing_pages = 0;
                                 /* Number of dirty pages we marked from */
                                 /* excludes ptrfree pages, etc.         */
                                 /* Used for logging only.               */
 #endif
 
-GC_INNER size_t GC_mark_stack_size = 0;
+GC_INNER MAY_THREAD_LOCAL size_t GC_mark_stack_size = 0;
 
 #ifdef PARALLEL_MARK
   STATIC volatile AO_t GC_first_nonempty = 0;
@@ -125,13 +123,13 @@ GC_INNER size_t GC_mark_stack_size = 0;
         /* thread.                      */
 #endif
 
-GC_INNER mark_state_t GC_mark_state = MS_NONE;
+GC_INNER MAY_THREAD_LOCAL mark_state_t GC_mark_state = MS_NONE;
 
-GC_INNER GC_bool GC_mark_stack_too_small = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_mark_stack_too_small = FALSE;
 
-static struct hblk * scan_ptr;
+static MAY_THREAD_LOCAL struct hblk * scan_ptr;
 
-STATIC GC_bool GC_objects_are_marked = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_objects_are_marked = FALSE;
                 /* Are there collectible marked objects in the heap?    */
 
 /* Is a collection in progress?  Note that this can return true in the  */
@@ -449,7 +447,7 @@ static void alloc_mark_stack(size_t);
     typedef struct {
       EXCEPTION_REGISTRATION ex_reg;
       void *alt_path;
-    } ext_ex_regn;
+    } MAY_THREAD_LOCAL ext_ex_regn;
 
     static EXCEPTION_DISPOSITION mark_ex_handler(
         struct _EXCEPTION_RECORD *ex_rec,
@@ -1583,9 +1581,9 @@ struct trace_entry {
     word bytes_allocd;
     word arg1;
     word arg2;
-} GC_trace_buf[TRACE_ENTRIES] = { { NULL, 0, 0, 0, 0 } };
+} MAY_THREAD_LOCAL GC_trace_buf[TRACE_ENTRIES] = { { NULL, 0, 0, 0, 0 } };
 
-int GC_trace_buf_ptr = 0;
+int MAY_THREAD_LOCAL GC_trace_buf_ptr = 0;
 
 void GC_add_trace_entry(char *kind, word arg1, word arg2)
 {

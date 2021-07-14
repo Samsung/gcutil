@@ -19,9 +19,9 @@
 #include <stdio.h>
 
 #ifdef GC_USE_ENTIRE_HEAP
-  int GC_use_entire_heap = TRUE;
+  MAY_THREAD_LOCAL int GC_use_entire_heap = TRUE;
 #else
-  int GC_use_entire_heap = FALSE;
+  MAY_THREAD_LOCAL int GC_use_entire_heap = FALSE;
 #endif
 
 /*
@@ -51,7 +51,7 @@
 #ifndef GC_GCJ_SUPPORT
   STATIC
 #endif
-  struct hblk * GC_hblkfreelist[N_HBLK_FLS+1] = { 0 };
+  MAY_THREAD_LOCAL struct hblk * GC_hblkfreelist[N_HBLK_FLS+1] = { 0 };
                                 /* List of completely empty heap blocks */
                                 /* Linked through hb_next field of      */
                                 /* header structure associated with     */
@@ -61,7 +61,7 @@
 #ifndef GC_GCJ_SUPPORT
   STATIC
 #endif
-  word GC_free_bytes[N_HBLK_FLS+1] = { 0 };
+  MAY_THREAD_LOCAL word GC_free_bytes[N_HBLK_FLS+1] = { 0 };
         /* Number of free bytes on each list.  Remains visible to GCJ.  */
 
 /* Return the largest n such that the number of free bytes on lists     */
@@ -393,7 +393,7 @@ STATIC void GC_add_to_fl(struct hblk *h, hdr *hhdr)
 #     define MUNMAP_THRESHOLD 6
 #   endif
 
-GC_INNER int GC_unmap_threshold = MUNMAP_THRESHOLD;
+GC_INNER MAY_THREAD_LOCAL int GC_unmap_threshold = MUNMAP_THRESHOLD;
 
 /* Unmap blocks that haven't been recently touched.  This is the only way */
 /* way blocks are ever unmapped.                                          */
@@ -670,7 +670,7 @@ GC_allochblk(size_t sz, int kind, unsigned flags/* IGNORE_OFF_PAGE or 0 */)
     return result;
 }
 
-STATIC long GC_large_alloc_warn_suppressed = 0;
+STATIC MAY_THREAD_LOCAL long GC_large_alloc_warn_suppressed = 0;
                         /* Number of warnings suppressed so far.        */
 
 /* The same, but with search restricted to nth free list.  Flags is     */
@@ -772,7 +772,7 @@ GC_allochblk_nth(size_t sz, int kind, unsigned flags, int n, int may_split)
                          && size_needed == (signed_word)HBLKSIZE
                          && IS_MAPPED(hhdr)) {
                 if (!GC_find_leak) {
-                  static unsigned count = 0;
+                  static MAY_THREAD_LOCAL unsigned count = 0;
 
                   /* The block is completely blacklisted.  We need      */
                   /* to drop some such blocks, since otherwise we spend */

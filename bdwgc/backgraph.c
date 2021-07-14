@@ -28,6 +28,10 @@
 
 #ifdef MAKE_BACK_GRAPH
 
+#if defined(GC_THREAD_ISOLATE)
+# error "You cannot this feature with thread-isolation"
+#endif
+
 #define MAX_IN  10      /* Maximum in-degree we handle directly */
 
 /* #include <unistd.h> */

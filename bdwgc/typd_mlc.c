@@ -42,11 +42,11 @@
 
 #define TYPD_EXTRA_BYTES (sizeof(word) - EXTRA_BYTES)
 
-STATIC int GC_explicit_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_explicit_kind = 0;
                         /* Object kind for objects with indirect        */
                         /* (possibly extended) descriptors.             */
 
-STATIC int GC_array_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_array_kind = 0;
                         /* Object kind for objects with complex         */
                         /* descriptors and GC_array_mark_proc.          */
 
@@ -94,22 +94,22 @@ typedef union ComplexDescriptor {
 } complex_descriptor;
 #define TAG ad.ad_tag
 
-STATIC ext_descr * GC_ext_descriptors = NULL;
+STATIC MAY_THREAD_LOCAL ext_descr * GC_ext_descriptors = NULL;
                                         /* Points to array of extended  */
                                         /* descriptors.                 */
 
-STATIC size_t GC_ed_size = 0;   /* Current size of above arrays.        */
+STATIC MAY_THREAD_LOCAL size_t GC_ed_size = 0;   /* Current size of above arrays.        */
 #define ED_INITIAL_SIZE 100
 
-STATIC size_t GC_avail_descr = 0;       /* Next available slot.         */
+STATIC MAY_THREAD_LOCAL size_t GC_avail_descr = 0;       /* Next available slot.         */
 
-STATIC int GC_typed_mark_proc_index = 0; /* Indices of my mark          */
-STATIC int GC_array_mark_proc_index = 0; /* procedures.                 */
+STATIC MAY_THREAD_LOCAL int GC_typed_mark_proc_index = 0; /* Indices of my mark          */
+STATIC MAY_THREAD_LOCAL int GC_array_mark_proc_index = 0; /* procedures.                 */
 
 #ifdef AO_HAVE_load_acquire
-  STATIC volatile AO_t GC_explicit_typing_initialized = FALSE;
+  STATIC MAY_THREAD_LOCAL volatile AO_t GC_explicit_typing_initialized = FALSE;
 #else
-  STATIC GC_bool GC_explicit_typing_initialized = FALSE;
+  STATIC MAY_THREAD_LOCAL GC_bool GC_explicit_typing_initialized = FALSE;
 #endif
 
 STATIC void GC_push_typed_structures_proc(void)
@@ -177,7 +177,7 @@ STATIC signed_word GC_add_ext_descriptor(const word * bm, word nbits)
 }
 
 /* Table of bitmap descriptors for n word long all pointer objects.     */
-STATIC GC_descr GC_bm_table[WORDSZ/2];
+STATIC MAY_THREAD_LOCAL GC_descr GC_bm_table[WORDSZ/2];
 
 /* Return a descriptor for the concatenation of 2 nwords long objects,  */
 /* each of which is described by descriptor.                            */
@@ -332,7 +332,7 @@ GC_make_sequence_descriptor(complex_descriptor *first,
     return((complex_descriptor *)result);
 }
 
-STATIC ptr_t * GC_eobjfreelist = NULL;
+STATIC MAY_THREAD_LOCAL ptr_t * GC_eobjfreelist = NULL;
 
 STATIC mse * GC_typed_mark_proc(word * addr, mse * mark_stack_ptr,
                                 mse * mark_stack_limit, word env);

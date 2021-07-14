@@ -50,10 +50,10 @@ struct dl_hashtbl_s {
     word entries;
 };
 
-STATIC struct dl_hashtbl_s GC_dl_hashtbl = {
+STATIC MAY_THREAD_LOCAL struct dl_hashtbl_s GC_dl_hashtbl = {
     /* head */ NULL, /* log_size */ -1, /* entries */ 0 };
 #ifndef GC_LONG_REFS_NOT_NEEDED
-  STATIC struct dl_hashtbl_s GC_ll_hashtbl = { NULL, -1, 0 };
+  STATIC MAY_THREAD_LOCAL struct dl_hashtbl_s GC_ll_hashtbl = { NULL, -1, 0 };
 #endif
 
 struct finalizable_object {
@@ -70,9 +70,9 @@ struct finalizable_object {
     finalization_mark_proc fo_mark_proc;        /* Mark-through procedure */
 };
 
-static signed_word log_fo_table_size = -1;
+static MAY_THREAD_LOCAL signed_word log_fo_table_size = -1;
 
-STATIC struct fnlz_roots_s {
+STATIC MAY_THREAD_LOCAL struct fnlz_roots_s {
   struct finalizable_object **fo_head;
   /* List of objects that should be finalized now: */
   struct finalizable_object *finalize_now;
@@ -316,10 +316,10 @@ GC_API int GC_CALL GC_unregister_disappearing_link(void * * link)
     GC_hidden_pointer weak_ref;
   } GCToggleRef;
 
-  STATIC GC_toggleref_func GC_toggleref_callback = 0;
-  STATIC GCToggleRef *GC_toggleref_arr = NULL;
-  STATIC int GC_toggleref_array_size = 0;
-  STATIC int GC_toggleref_array_capacity = 0;
+  STATIC MAY_THREAD_LOCAL GC_toggleref_func GC_toggleref_callback = 0;
+  STATIC MAY_THREAD_LOCAL GCToggleRef *GC_toggleref_arr = NULL;
+  STATIC MAY_THREAD_LOCAL int GC_toggleref_array_size = 0;
+  STATIC MAY_THREAD_LOCAL int GC_toggleref_array_capacity = 0;
 
   GC_INNER void GC_process_togglerefs(void)
   {
@@ -488,7 +488,7 @@ GC_API int GC_CALL GC_unregister_disappearing_link(void * * link)
 #endif /* !GC_TOGGLE_REFS_NOT_NEEDED */
 
 /* Finalizer callback support. */
-STATIC GC_await_finalize_proc GC_object_finalized_proc = 0;
+STATIC MAY_THREAD_LOCAL GC_await_finalize_proc GC_object_finalized_proc = 0;
 
 GC_API void GC_CALL GC_set_await_finalize_proc(GC_await_finalize_proc fn)
 {
@@ -845,7 +845,7 @@ GC_API void GC_CALL GC_register_finalizer_no_order(void * obj,
                                 ocd, GC_null_finalize_mark_proc);
 }
 
-static GC_bool need_unreachable_finalization = FALSE;
+static MAY_THREAD_LOCAL GC_bool need_unreachable_finalization = FALSE;
         /* Avoid the work if this isn't used.   */
 
 GC_API void GC_CALL GC_register_finalizer_unreachable(void * obj,
@@ -906,20 +906,20 @@ GC_API void GC_CALL GC_register_finalizer_unreachable(void * obj,
 #endif /* !NO_DEBUGGING */
 
 #ifndef SMALL_CONFIG
-  STATIC word GC_old_dl_entries = 0; /* for stats printing */
+  STATIC MAY_THREAD_LOCAL word GC_old_dl_entries = 0; /* for stats printing */
 # ifndef GC_LONG_REFS_NOT_NEEDED
-    STATIC word GC_old_ll_entries = 0;
+    STATIC MAY_THREAD_LOCAL word GC_old_ll_entries = 0;
 # endif
 #endif /* !SMALL_CONFIG */
 
 #ifndef THREADS
   /* Global variables to minimize the level of recursion when a client  */
   /* finalizer allocates memory.                                        */
-  STATIC int GC_finalizer_nested = 0;
+  STATIC MAY_THREAD_LOCAL int GC_finalizer_nested = 0;
                         /* Only the lowest byte is used, the rest is    */
                         /* padding for proper global data alignment     */
                         /* required for some compilers (like Watcom).   */
-  STATIC unsigned GC_finalizer_skipped = 0;
+  STATIC MAY_THREAD_LOCAL unsigned GC_finalizer_skipped = 0;
 
   /* Checks and updates the level of finalizers recursion.              */
   /* Returns NULL if GC_invoke_finalizers() should not be called by the */
@@ -1308,13 +1308,13 @@ GC_API int GC_CALL GC_invoke_finalizers(void)
     return count;
 }
 
-static word last_finalizer_notification = 0;
+static MAY_THREAD_LOCAL word last_finalizer_notification = 0;
 
 GC_INNER void GC_notify_or_invoke_finalizers(void)
 {
     GC_finalizer_notifier_proc notifier_fn = 0;
 #   if defined(KEEP_BACK_PTRS) || defined(MAKE_BACK_GRAPH)
-      static word last_back_trace_gc_no = 1;    /* Skip first one. */
+      static MAY_THREAD_LOCAL word last_back_trace_gc_no = 1;    /* Skip first one. */
 #   endif
     DCL_LOCK_STATE;
 

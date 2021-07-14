@@ -29,12 +29,12 @@ typedef struct {
                                 /* to hide it from collector.           */
 } page_entry;
 
-page_entry GC_sums[NSUMS];
+MAY_THREAD_LOCAL page_entry GC_sums[NSUMS];
 
-STATIC word GC_faulted[NSUMS] = { 0 };
+STATIC MAY_THREAD_LOCAL word GC_faulted[NSUMS] = { 0 };
                 /* Record of pages on which we saw a write fault.       */
 
-STATIC size_t GC_n_faulted = 0;
+STATIC MAY_THREAD_LOCAL size_t GC_n_faulted = 0;
 
 #if defined(MPROTECT_VDB) && !defined(DARWIN)
   void GC_record_fault(struct hblk * h)
@@ -70,10 +70,10 @@ STATIC word GC_checksum(struct hblk *h)
     return(result | 0x80000000 /* doesn't look like pointer */);
 }
 
-int GC_n_dirty_errors = 0;
-int GC_n_faulted_dirty_errors = 0;
-unsigned long GC_n_clean = 0;
-unsigned long GC_n_dirty = 0;
+MAY_THREAD_LOCAL int GC_n_dirty_errors = 0;
+MAY_THREAD_LOCAL int GC_n_faulted_dirty_errors = 0;
+MAY_THREAD_LOCAL unsigned long GC_n_clean = 0;
+MAY_THREAD_LOCAL unsigned long GC_n_dirty = 0;
 
 STATIC void GC_update_check_page(struct hblk *h, int index)
 {

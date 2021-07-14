@@ -27,7 +27,7 @@
 
 #include <stdio.h>
 
-GC_INNER signed_word GC_bytes_found = 0;
+GC_INNER MAY_THREAD_LOCAL signed_word GC_bytes_found = 0;
                         /* Number of bytes of memory reclaimed     */
                         /* minus the number of bytes originally    */
                         /* on free lists which we had to drop.     */
@@ -46,10 +46,10 @@ GC_INNER signed_word GC_bytes_found = 0;
 #ifndef MAX_LEAKED
 # define MAX_LEAKED 40
 #endif
-STATIC ptr_t GC_leaked[MAX_LEAKED] = { NULL };
-STATIC unsigned GC_n_leaked = 0;
+STATIC MAY_THREAD_LOCAL ptr_t GC_leaked[MAX_LEAKED] = { NULL };
+STATIC MAY_THREAD_LOCAL unsigned GC_n_leaked = 0;
 
-GC_INNER GC_bool GC_have_errors = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_have_errors = FALSE;
 
 #if !defined(EAGER_SWEEP) && (defined(ENABLE_DISCLAIM) || defined(ESCARGOT))
   STATIC void GC_reclaim_unconditionally_marked(void);
@@ -74,7 +74,7 @@ GC_INLINE void GC_add_leaked(ptr_t leaked)
 /* Clear both lists.  Called without the allocation lock held.          */
 GC_INNER void GC_print_all_errors(void)
 {
-    static GC_bool printing_errors = FALSE;
+    static MAY_THREAD_LOCAL GC_bool printing_errors = FALSE;
     GC_bool have_errors;
     unsigned i, n_leaked;
     ptr_t leaked[MAX_LEAKED];

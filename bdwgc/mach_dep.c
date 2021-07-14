@@ -237,7 +237,7 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
       /* Older versions of Darwin seem to lack getcontext().    */
       /* ARM and MIPS Linux often doesn't support a real        */
       /* getcontext().                                          */
-      static signed char getcontext_works = 0; /* (-1) - broken, 1 - works */
+      static MAY_THREAD_LOCAL signed char getcontext_works = 0; /* (-1) - broken, 1 - works */
       ucontext_t ctxt;
 #     ifdef GETCONTEXT_FPU_EXCMASK_BUG
         /* Workaround a bug (clearing the FPU exception mask) in        */

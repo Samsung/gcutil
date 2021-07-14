@@ -34,9 +34,9 @@ struct roots {
 struct roots GC_static_roots[MAX_ROOT_SETS];
 */
 
-int GC_no_dls = 0;      /* Register dynamic library data segments.      */
+MAY_THREAD_LOCAL int GC_no_dls = 0;      /* Register dynamic library data segments.      */
 
-static int n_root_sets = 0;
+static MAY_THREAD_LOCAL int n_root_sets = 0;
         /* GC_static_roots[0..n_root_sets) contains the valid root sets. */
 
 #if !defined(NO_DEBUGGING) || defined(GC_ASSERTIONS)
@@ -79,7 +79,7 @@ static int n_root_sets = 0;
   /* Is the address p in one of the registered static root sections?      */
   GC_INNER GC_bool GC_is_static_root(void *p)
   {
-    static int last_root_set = MAX_ROOT_SETS;
+    static MAY_THREAD_LOCAL int last_root_set = MAX_ROOT_SETS;
     int i;
 
     if (last_root_set < n_root_sets
@@ -147,7 +147,7 @@ static int n_root_sets = 0;
   }
 #endif /* !MSWIN32 && !MSWINCE && !CYGWIN32 */
 
-GC_INNER word GC_root_size = 0;
+GC_INNER MAY_THREAD_LOCAL word GC_root_size = 0;
 
 GC_API void GC_CALL GC_add_roots(void *b, void *e)
 {
@@ -271,7 +271,7 @@ void GC_add_roots_inner(ptr_t b, ptr_t e, GC_bool tmp)
     n_root_sets++;
 }
 
-static GC_bool roots_were_cleared = FALSE;
+static MAY_THREAD_LOCAL GC_bool roots_were_cleared = FALSE;
 
 GC_API void GC_CALL GC_clear_roots(void)
 {
@@ -481,7 +481,7 @@ STATIC void GC_remove_tmp_roots(void)
   /* Is the address p in one of the temporary static root sections?     */
   GC_API int GC_CALL GC_is_tmp_root(void *p)
   {
-    static int last_root_set = MAX_ROOT_SETS;
+    static MAY_THREAD_LOCAL int last_root_set = MAX_ROOT_SETS;
     int i;
 
     if (last_root_set < n_root_sets
@@ -529,7 +529,7 @@ struct exclusion GC_excl_table[MAX_EXCLUSIONS];
                                         -- address order.
 */
 
-STATIC size_t GC_excl_table_entries = 0;/* Number of entries in use.      */
+STATIC MAY_THREAD_LOCAL size_t GC_excl_table_entries = 0;/* Number of entries in use.      */
 
 /* Return the first exclusion range that includes an address >= start_addr */
 /* Assumes the exclusion table contains at least one entry (namely the     */
@@ -836,7 +836,7 @@ STATIC void GC_push_current_stack(ptr_t cold_gc_frame,
 #   endif /* !THREADS */
 }
 
-GC_INNER void (*GC_push_typed_structures)(void) = 0;
+GC_INNER MAY_THREAD_LOCAL void (*GC_push_typed_structures)(void) = 0;
 
                         /* Push GC internal roots.  These are normally  */
                         /* included in the static data segment, and     */
@@ -876,7 +876,7 @@ STATIC void GC_push_regs_and_stack(ptr_t cold_gc_frame)
     GC_with_callee_saves_pushed(GC_push_current_stack, cold_gc_frame);
 }
 
-STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+STATIC MAY_THREAD_LOCAL GC_mark_stack_func GC_mark_stack_func_proc = 0;
 GC_API void GC_CALL GC_register_mark_stack_func(GC_mark_stack_func func)                   
 {
         GC_mark_stack_func_proc = func;
