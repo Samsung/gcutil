@@ -166,6 +166,7 @@ GC_API GC_on_collection_event_proc GC_CALL GC_get_on_collection_event(void);
 typedef void (GC_CALLBACK * GC_on_event_proc)(GC_EventType, void* data);
 GC_API void GC_CALL GC_add_event_callback(GC_on_event_proc fn, void* data);
 GC_API void GC_CALL GC_remove_event_callback(GC_on_event_proc fn, void* data);
+GC_API void GC_CALL GC_remove_all_event_callbacks();
 #endif
 
 #if defined(GC_THREADS) || (defined(GC_BUILD) && defined(NN_PLATFORM_CTR))
