@@ -23,41 +23,6 @@
 #include <vector>
 #include <algorithm>
 
-GC_API void GC_CALL GC_set_on_collection_event(GC_on_collection_event_proc);
-
-static std::vector<std::pair<GC_on_event_proc, void*>>* gcEventCallbacks()
-{
-    static MAY_THREAD_LOCAL std::vector<std::pair<GC_on_event_proc, void*>>* eventCallbacks = nullptr;
-    if (!eventCallbacks) {
-        eventCallbacks = new std::vector<std::pair<GC_on_event_proc, void*>>();
-    }
-    return eventCallbacks;
-}
-
-GC_API void GC_CALL GC_add_event_callback(GC_on_event_proc fn, void* data)
-{
-    gcEventCallbacks()->push_back(std::make_pair(fn, data));
-
-    GC_set_on_collection_event([](GC_EventType evtType) {
-        for (size_t i = 0; i < gcEventCallbacks()->size(); i++) {
-            gcEventCallbacks()->at(i).first(evtType, gcEventCallbacks()->at(i).second);
-        }
-    });
-}
-
-GC_API void GC_CALL GC_remove_event_callback(GC_on_event_proc fn, void* data)
-{
-    auto iter = std::find(gcEventCallbacks()->begin(), gcEventCallbacks()->end(), std::make_pair(fn, data));
-    if (iter != gcEventCallbacks()->end()) {
-        gcEventCallbacks()->erase(iter);
-    }
-}
-
-GC_API void GC_CALL GC_remove_all_event_callbacks()
-{
-    delete gcEventCallbacks();
-}
-
 #ifdef ESCARGOT_MEM_STATS
 #include <cstring>
 #include <map>
