@@ -798,9 +798,25 @@ GC_INNER MAY_THREAD_LOCAL size_t GC_page_size = 0;
       if (buf.State != MEM_COMMIT) return(0);
       return(buf.RegionSize);
     }
+#if defined(_M_IX86) || defined(_M_AMD64)
+    STATIC NT_TIB *read_tib()
+    {
+# ifdef _M_IX86
+        return (NT_TIB *)__readfsdword(0x18);
+# elif _M_AMD64
+        return (NT_TIB *)__readgsqword(0x30);
+# else
+#  error unsupported architecture
+# endif
+    }
+#endif
 
     GC_API int GC_CALL GC_get_stack_base(struct GC_stack_base *sb)
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
+      sb -> mem_base = read_tib()->StackBase;
+      return GC_SUCCESS;
+#else
       ptr_t trunc_sp;
       word size;
 
@@ -815,6 +831,8 @@ GC_INNER MAY_THREAD_LOCAL size_t GC_page_size = 0;
       GC_ASSERT(size != 0);
       sb -> mem_base = trunc_sp + size;
       return GC_SUCCESS;
+#endif
+
     }
 # else /* CYGWIN32 */
     /* An alternate version for Cygwin (adapted from Dave Korn's        */

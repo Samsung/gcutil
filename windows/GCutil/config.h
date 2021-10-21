@@ -40,7 +40,7 @@
 /* #undef GC_FREEBSD_THREADS */
 
 /* Define to include support for gcj. */
-#define GC_GCJ_SUPPORT 1
+/* #define GC_GCJ_SUPPORT 1 */
 
 /* Define to support GNU pthreads. */
 /* #undef GC_GNU_THREADS */
@@ -91,13 +91,13 @@
 /* #undef GC_USE_DLOPEN_WRAP */
 
 /* The major version number of this GC release. */
-#define GC_VERSION_MAJOR 7
+#define GC_VERSION_MAJOR 8
 
 /* The micro version number of this GC release. */
-#define GC_VERSION_MICRO 0
+#define GC_VERSION_MICRO 4
 
 /* The minor version number of this GC release. */
-#define GC_VERSION_MINOR 5
+#define GC_VERSION_MINOR 0
 
 /* Define to support pthreads-win32 or winpthreads. */
 /* #undef GC_WIN32_PTHREADS */
@@ -250,7 +250,7 @@
 #define USE_WINALLOC 1
 
 /* Version number of package */
-#define VERSION "7.5.0"
+#define VERSION "8.0.4"
 
 /* The POSIX feature macro. */
 /* #undef _POSIX_C_SOURCE */
@@ -260,6 +260,13 @@
 
 /* Required define if using POSIX threads. */
 /* #undef _REENTRANT */
+
+#define ALL_INTERIOR_POINTERS 0
+#define GC_DONT_REGISTER_MAIN_STATIC_DATA 1
+#define GC_ENABLE_SUSPEND_THREAD 1
+#define GC_NO_THREADS_DISCOVERY 1
+#define IGNORE_DYNAMIC_LOADING 1
+#define JAVA_FINALIZATION 1
 
 /* Define to `__inline__' or `__inline' if that's what the C compiler
    calls it, or to nothing if 'inline' is not supported under any name.  */
