@@ -736,7 +736,9 @@ GC_API void GC_CALL GC_dump_for_graph(const char* log_file_name,
 {
     struct Print_stats_escargot pstats;
     size_t peak_rss;
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
     struct rusage ru;
+#endif
 
     pstats.number_of_blocks = 0;
     pstats.total_bytes = 0;

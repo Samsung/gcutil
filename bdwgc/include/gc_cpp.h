@@ -332,6 +332,7 @@ inline void* operator new(size_t size, GC_NS_QUALIFY(GCPlacement) gcp,
     }
 # endif
 
+# ifdef GC_OVERRIDE_GLOBAL_NEW_DELETE
   inline void* operator new(size_t size)
   {
     void* obj = GC_MALLOC_UNCOLLECTABLE(size);
@@ -343,20 +344,20 @@ inline void* operator new(size_t size, GC_NS_QUALIFY(GCPlacement) gcp,
   {
     GC_FREE(obj);
   }
-
-# if __cplusplus > 201103L // C++14
-    inline void operator delete(void* obj, size_t size) GC_NOEXCEPT {
-      (void)size; // size is ignored
-      GC_FREE(obj);
-    }
-
-#   if defined(GC_OPERATOR_NEW_ARRAY)
-      inline void operator delete[](void* obj, size_t size) GC_NOEXCEPT {
-        (void)size;
+#   if __cplusplus > 201103L // C++14
+      inline void operator delete(void* obj, size_t size) GC_NOEXCEPT {
+        (void)size; // size is ignored
         GC_FREE(obj);
       }
-#   endif
-# endif // C++14
+
+#     if defined(GC_OPERATOR_NEW_ARRAY)
+        inline void operator delete[](void* obj, size_t size) GC_NOEXCEPT {
+          (void)size;
+          GC_FREE(obj);
+        }
+#     endif
+#   endif // C++14
+# endif
 #endif
 
 #ifdef _MSC_VER
