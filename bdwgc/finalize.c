@@ -1259,6 +1259,16 @@ GC_API int GC_CALL GC_should_invoke_finalizers(void)
 /* Should be called without allocation lock.                            */
 GC_API int GC_CALL GC_invoke_finalizers(void)
 {
+#if defined(ESCARGOT)
+    unsigned char* pnested = GC_check_finalizer_nested();
+    if (pnested == NULL) {
+        // if we are inside another GC_invoke_finalizers()
+        // skip GC_invoke_finalizers() immediately
+        return 0;
+    }
+    GC_ASSERT(*pnested == 1);
+#endif
+
     int count = 0;
     word bytes_freed_before = 0; /* initialized to prevent warning. */
     DCL_LOCK_STATE;
@@ -1305,6 +1315,13 @@ GC_API int GC_CALL GC_invoke_finalizers(void)
         GC_finalizer_bytes_freed += (GC_bytes_freed - bytes_freed_before);
         UNLOCK();
     }
+
+#if defined(ESCARGOT)
+    *pnested = 0; /* Reset since no more finalizers. */
+#ifndef THREADS
+    GC_ASSERT(NULL == GC_fnlz_roots.finalize_now);
+#endif
+#endif
     return count;
 }
 
@@ -1358,6 +1375,10 @@ GC_INNER void GC_notify_or_invoke_finalizers(void)
     }
 
     if (!GC_finalize_on_demand) {
+#if defined(ESCARGOT)
+      UNLOCK();
+      (void) GC_invoke_finalizers();
+#else
       unsigned char *pnested = GC_check_finalizer_nested();
       UNLOCK();
       /* Skip GC_invoke_finalizers() if nested */
@@ -1368,6 +1389,7 @@ GC_INNER void GC_notify_or_invoke_finalizers(void)
           GC_ASSERT(NULL == GC_fnlz_roots.finalize_now);
 #       endif   /* Otherwise GC can run concurrently and add more */
       }
+#endif
       return;
     }
 
