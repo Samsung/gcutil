@@ -2148,7 +2148,7 @@ GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_print_back_height;
 #endif
 
 #ifdef CAN_HANDLE_FORK
-  GC_EXTERN int GC_handle_fork;
+  GC_EXTERN MAY_THREAD_LOCAL int GC_handle_fork;
                 /* Fork-handling mode:                                  */
                 /* 0 means no fork handling requested (but client could */
                 /* anyway call fork() provided it is surrounded with    */
