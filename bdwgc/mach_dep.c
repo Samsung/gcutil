@@ -229,7 +229,10 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
 {
   volatile int dummy;
   volatile ptr_t context = 0;
-
+# if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    volatile jmp_buf regs;
+    volatile jmp_buf regs_32_to_64_expand[2];
+# endif
 # if defined(HAVE_PUSH_REGS)
     GC_push_regs();
 # else
@@ -303,7 +306,9 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
         /* The idea is due to Parag Patel at HP. */
         /* We're not sure whether he would like  */
         /* to be acknowledged for it or not.     */
-        jmp_buf regs;
+#     if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
+          jmp_buf regs;
+#     endif
         word * i = (word *)&regs;
         ptr_t lim = (ptr_t)(&regs) + sizeof(regs);
 
@@ -322,6 +327,18 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
           /* SUSV3, setjmp() may or may not save signal mask.   */
           /* _setjmp won't, but is less portable.               */
 #       endif
+
+#       if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+          uint32_t* ptr = (uint32_t*)regs;
+          uint64_t* dst_ptr = (uint64_t*)regs_32_to_64_expand;
+          while ((size_t)ptr < (size_t)((char*)regs + sizeof(jmp_buf))) {
+              *dst_ptr = *ptr;
+              dst_ptr++;
+              ptr++;
+          }
+#       endif
+
+
 #     endif /* !HAVE_BUILTIN_UNWIND_INIT */
     }
 # endif /* !HAVE_PUSH_REGS */
@@ -332,6 +349,11 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
   /* as a tail-call, since that would pop the register          */
   /* contents before we get a chance to look at them.           */
   GC_noop1(COVERT_DATAFLOW(&dummy));
+# if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    GC_noop1(COVERT_DATAFLOW(&regs));
+    GC_noop1(COVERT_DATAFLOW(&regs_32_to_64_expand[0]));
+    GC_noop1(COVERT_DATAFLOW(&regs_32_to_64_expand[1]));
+#endif
 }
 
 #endif /* !SN_TARGET_ORBIS && !SN_TARGET_PSP2 */

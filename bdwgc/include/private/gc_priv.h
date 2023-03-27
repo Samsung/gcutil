@@ -2273,7 +2273,7 @@ GC_API_PRIV void GC_log_printf(const char * format, ...)
   /* GC_verbose_log_printf is called only if GC_print_stats is VERBOSE. */
 # define GC_verbose_log_printf GC_log_printf
 #else
-  extern GC_bool GC_quiet;
+  extern GC_bool MAY_THREAD_LOCAL GC_quiet;
 # define GC_PRINT_STATS_FLAG (!GC_quiet)
   /* INFO/DBG loggers are enabled even if GC_print_stats is off. */
 # ifndef GC_INFOLOG_PRINTF
