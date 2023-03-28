@@ -2217,17 +2217,24 @@ void GC_register_data_segments(void)
                                     | (GC_pages_executable ? PROT_EXEC : 0),
                   GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0/* offset */);
 #   else
+    int retry = 0;
     while ((size_t)last_addr < 1073741824L * 4) {
         result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
                                         | (GC_pages_executable ? PROT_EXEC : 0),
                       GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd, 0/* offset */);
         if (result != MAP_FAILED) {
-            break;
+            if (((size_t)result + bytes) > 1073741824L * 4 && retry == 0) {
+                retry = 1;
+                last_addr = (ptr_t)0x1000;
+                continue;
+            } else {
+                break;
+            }
         }
         last_addr = (ptr_t)((size_t)last_addr + GC_page_size);
     }
 
-    if ((size_t)last_addr + bytes > 1073741824L * 4) {
+    if (((size_t)result + bytes) > 1073741824L * 4) {
         ABORT("Cannot allocate memory");
     }
 #   endif
