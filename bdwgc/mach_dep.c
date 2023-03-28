@@ -230,8 +230,8 @@ GC_INNER void GC_with_callee_saves_pushed(void (*fn)(ptr_t, void *),
   volatile int dummy;
   volatile ptr_t context = 0;
 # if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-    volatile jmp_buf regs;
-    volatile jmp_buf regs_32_to_64_expand[2];
+    jmp_buf regs;
+    jmp_buf regs_32_to_64_expand[2];
 # endif
 # if defined(HAVE_PUSH_REGS)
     GC_push_regs();
