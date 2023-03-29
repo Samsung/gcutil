@@ -14,6 +14,10 @@
 
 #include "private/gc_priv.h"
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#  include <stdint.h>
+#endif
+
 #if !defined(SN_TARGET_ORBIS) && !defined(SN_TARGET_PSP2)
 
 #include <stdio.h>
