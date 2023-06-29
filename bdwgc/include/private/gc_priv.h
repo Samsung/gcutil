@@ -1551,7 +1551,7 @@ GC_EXTERN MAY_THREAD_LOCAL size_t GC_page_size;
 
 #if defined(MSWIN32) || defined(MSWINCE) || defined(CYGWIN32)
   struct _SYSTEM_INFO;
-  GC_EXTERN struct _SYSTEM_INFO GC_sysinfo;
+  GC_EXTERN MAY_THREAD_LOCAL struct _SYSTEM_INFO GC_sysinfo;
   GC_INNER GC_bool GC_is_heap_base(void *p);
 #endif
 
