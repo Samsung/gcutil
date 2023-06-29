@@ -1378,7 +1378,6 @@ GC_API void GC_CALL GC_init(void)
     RESTORE_CANCEL(cancel_state);
 #ifdef ESCARGOT
     /* These variables are not initialized properly */
-    GC_heapsize = 0;
 #if defined(USE_MMAP)
     GC_unmapped_bytes = 0;
 #endif
