@@ -2495,13 +2495,43 @@ void * os2_alloc(size_t bytes)
         /* available.  Otherwise we waste resources or possibly */
         /* cause VirtualAlloc to fail (observed in Windows 2000 */
         /* SP2).                                                */
-        result = (ptr_t) VirtualAlloc(NULL,
-                            SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
-                            GetWriteWatch_alloc_flag
-                                | (MEM_COMMIT | MEM_RESERVE)
-                                | GC_mem_top_down,
-                            GC_pages_executable ? PAGE_EXECUTE_READWRITE :
-                                                  PAGE_READWRITE);
+#       if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+        static ptr_t base_address = NULL;
+        if (base_address == NULL) {
+          base_address = GC_sysinfo.lpMinimumApplicationAddress;
+        }
+        int retry_count = 0;
+        while (retry_count < 2) {
+          result = (ptr_t)VirtualAlloc(base_address,
+            SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+            GetWriteWatch_alloc_flag
+            | (MEM_COMMIT | MEM_RESERVE)
+            | GC_mem_top_down,
+            GC_pages_executable ? PAGE_EXECUTE_READWRITE :
+            PAGE_READWRITE);
+          if (!GetLastError()) {
+            break;
+          }
+          SetLastError(0);
+          base_address = (ptr_t)((size_t)base_address + SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD));
+          if (base_address > 1073741824ULL * 4) {
+            retry_count++;
+            base_address = GC_sysinfo.lpMinimumApplicationAddress;
+          }
+        }
+        base_address = result;
+        if (((size_t)result + bytes) > 1073741824ULL * 4) {
+          ABORT("Cannot allocate memory");
+        }
+#       else
+        result = (ptr_t)VirtualAlloc(NULL,
+          SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+          GetWriteWatch_alloc_flag
+          | (MEM_COMMIT | MEM_RESERVE)
+          | GC_mem_top_down,
+          GC_pages_executable ? PAGE_EXECUTE_READWRITE :
+          PAGE_READWRITE);
+#       endif
 #       undef IGNORE_PAGES_EXECUTABLE
     }
 # endif /* USE_WINALLOC */
