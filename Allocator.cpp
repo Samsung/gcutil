@@ -73,7 +73,9 @@ void unregisterGCAddress(void* address, void* data)
 {
     auto it = addressTable().find(address);
     // The address should exist.
-    assert(it != addressTable().end());
+    if (it == addressTable().end()) {
+        return;
+    }
 
     AllocInfo allocInfo = it->second;
     // Execute the user defined callback.
