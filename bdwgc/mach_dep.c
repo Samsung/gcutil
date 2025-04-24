@@ -51,6 +51,12 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
 {
   volatile int dummy;
   volatile ptr_t context = 0;
+
+# if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  volatile jmp_buf regs;
+  volatile jmp_buf regs_32_to_64_expand[2];
+# endif
+
 #  if defined(EMSCRIPTEN) || defined(HAVE_BUILTIN_UNWIND_INIT)               \
       || defined(STACK_NOT_SCANNED) || (defined(NO_CRT) && defined(MSWIN32)) \
       || !defined(NO_UNDERSCORE_SETJMP)
@@ -143,7 +149,9 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
     /* The idea is due to Parag Patel at HP. */
     /* We're not sure whether he would like  */
     /* to be acknowledged for it or not.     */
-    jmp_buf regs;
+#   if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
+      jmp_buf regs;
+#   endif
 
     /* setjmp doesn't always clear all of the buffer.       */
     /* That tends to preserve garbage.  Clear it.           */
@@ -156,6 +164,17 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
     /* _setjmp won't, but is less portable.               */
     (void)_setjmp(regs);
 #      endif
+
+#      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+         uint32_t* ptr = (uint32_t*)regs;
+         uint64_t* dst_ptr = (uint64_t*)regs_32_to_64_expand;
+         while ((size_t)ptr < (size_t)((char*)regs + sizeof(jmp_buf))) {
+           *dst_ptr = *ptr;
+           dst_ptr++;
+           ptr++;
+         }
+#      endif
+
 #    endif
   }
 #  endif
@@ -168,6 +187,13 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
   /* as a tail-call, since that would pop the register          */
   /* contents before we get a chance to look at them.           */
   GC_noop1(COVERT_DATAFLOW(ADDR(&dummy)));
+
+# if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    GC_noop1(COVERT_DATAFLOW(&regs));
+    GC_noop1(COVERT_DATAFLOW(&regs_32_to_64_expand[0]));
+    GC_noop1(COVERT_DATAFLOW(&regs_32_to_64_expand[1]));
+# endif
+
 #  undef volatile_arg
 }
 
