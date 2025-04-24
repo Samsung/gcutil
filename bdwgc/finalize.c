@@ -1319,6 +1319,14 @@ GC_should_invoke_finalizers(void)
 GC_API int GC_CALL
 GC_invoke_finalizers(void)
 {
+  unsigned char* pnested = GC_check_finalizer_nested();
+  if (pnested == NULL) {
+    // if we are inside another GC_invoke_finalizers()
+    // skip GC_invoke_finalizers() immediately
+    return 0;
+  }
+  GC_ASSERT(*pnested == 1);
+
   int count = 0;
   word bytes_freed_before = 0; /* initialized to prevent warning */
 
@@ -1368,6 +1376,12 @@ GC_invoke_finalizers(void)
     GC_finalizer_bytes_freed += (GC_bytes_freed - bytes_freed_before);
     UNLOCK();
   }
+
+  *pnested = 0; /* Reset since no more finalizers. */
+#ifndef THREADS
+  GC_ASSERT(NULL == GC_fnlz_roots.finalize_now);
+#endif
+
   return count;
 }
 
@@ -1429,29 +1443,8 @@ GC_notify_or_invoke_finalizers(void)
   }
 
   if (!GC_finalize_on_demand) {
-    unsigned char *pnested;
-
-#  ifdef THREADS
-    if (EXPECT(GC_in_thread_creation, FALSE)) {
-      UNLOCK();
-      return;
-    }
-#  endif
-    pnested = GC_check_finalizer_nested();
     UNLOCK();
-    /* Skip GC_invoke_finalizers() if nested. */
-    if (pnested != NULL) {
-      (void)GC_invoke_finalizers();
-      /* Reset since no more finalizers or interrupted.       */
-      *pnested = 0;
-#  ifndef THREADS
-      GC_ASSERT(NULL == GC_fnlz_roots.finalize_now
-                || GC_interrupt_finalizers > 0);
-#  else
-      /* Note: in the multi-threaded case GC can run concurrently   */
-      /* and add more finalizers to run.                            */
-#  endif
-    }
+    (void) GC_invoke_finalizers();
     return;
   }
 
