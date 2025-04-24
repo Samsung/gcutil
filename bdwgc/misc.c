@@ -2324,9 +2324,11 @@ GC_enable(void)
   /* Ensure no counter underflow.     */
   GC_ASSERT(GC_dont_gc != 0);
   GC_dont_gc--;
+#if 0
   if (!GC_dont_gc && GC_heapsize > GC_heapsize_on_gc_disable)
     WARN("Heap grown by %" WARN_PRIuPTR " KiB while GC was disabled\n",
          (GC_heapsize - GC_heapsize_on_gc_disable) >> 10);
+#endif
   UNLOCK();
 }
 
