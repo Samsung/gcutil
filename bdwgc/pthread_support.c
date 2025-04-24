@@ -946,12 +946,8 @@ GC_check_finalizer_nested(void)
   crtn = me->crtn;
   nesting_level = crtn->finalizer_nested;
   if (nesting_level) {
-    /* We are inside another GC_invoke_finalizers().          */
-    /* Skip some implicitly-called GC_invoke_finalizers()     */
-    /* depending on the nesting (recursion) level.            */
-    if ((unsigned)(++crtn->finalizer_skipped) < (1U << nesting_level))
-      return NULL;
-    crtn->finalizer_skipped = 0;
+    // disable nested call
+    return NULL;
   }
   crtn->finalizer_nested = (unsigned char)(nesting_level + 1);
   return &crtn->finalizer_nested;
