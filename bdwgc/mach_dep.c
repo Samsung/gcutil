@@ -15,6 +15,10 @@
 
 #include "private/gc_priv.h"
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#  include <stdint.h>
+#endif
+
 #if !defined(PLATFORM_MACH_DEP) && !defined(SN_TARGET_PSP2)
 
 #  if defined(IA64) && !defined(THREADS)
