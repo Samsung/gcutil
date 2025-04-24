@@ -2341,7 +2341,7 @@ STATIC void *
 GC_unix_mmap_get_mem(size_t bytes)
 {
   void *result;
-  static word last_addr = HEAP_START;
+  static ptr_t last_addr = (ptr_t)HEAP_START;
 
 #      ifndef USE_MMAP_ANON
   static GC_bool initialized = FALSE;
@@ -2375,24 +2375,37 @@ GC_unix_mmap_get_mem(size_t bytes)
     if (last_addr == 0) {
         last_addr = (ptr_t)0x1000;
     }
-#   if defined(MAP_32BIT)
+#     if defined(MAP_32BIT)
     result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
                                     | (GC_pages_executable ? PROT_EXEC : 0),
                   GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0/* offset */);
-#   else
+#     else
+    int retry = 0;
     while ((size_t)last_addr < 1073741824L * 4) {
         result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
                                         | (GC_pages_executable ? PROT_EXEC : 0),
                       GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd, 0/* offset */);
         if (result != MAP_FAILED) {
-            break;
+            if (((size_t)result + bytes) > 1073741824L * 4 && retry == 0) {
+                retry = 1;
+                last_addr = (ptr_t)0x1000;
+                continue;
+            } else {
+                break;
+            }
         }
         last_addr = (ptr_t)((size_t)last_addr + GC_page_size);
     }
 
-    if ((size_t)last_addr + bytes > 1073741824L * 4) {
+    if (((size_t)result + bytes) > 1073741824L * 4) {
         ABORT("Cannot allocate memory");
     }
+#     endif
+#   else
+    result
+        = mmap(MAKE_CPTR(last_addr), bytes,
+            (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
+            GC_MMAP_FLAGS | OPT_MAP_ANON, zero_fd, 0 /* offset */);
 #   endif
 #      undef IGNORE_PAGES_EXECUTABLE
 
@@ -2417,7 +2430,7 @@ GC_unix_mmap_get_mem(size_t bytes)
 #      endif
   if ((ADDR(result) % HBLKSIZE) != 0)
     ABORT("Memory returned by mmap is not aligned to HBLKSIZE");
-  last_addr = ADDR(result) + bytes;
+  last_addr = (ptr_t)(ADDR(result) + bytes);
   GC_ASSERT((last_addr & (GC_page_size - 1)) == 0);
   return result;
 }
