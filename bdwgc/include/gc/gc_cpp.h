@@ -220,11 +220,7 @@ by UseGC.  GC is an alias for UseGC, unless GC_NAME_CONFLICT is defined.
       throw std::bad_alloc()
 #else
 // "new" header is not included, so bad_alloc cannot be thrown directly.
-GC_API void GC_CALL GC_throw_bad_alloc();
-#  define GC_OP_NEW_OOM_CHECK(obj) \
-    if (obj) {                     \
-    } else                         \
-      GC_throw_bad_alloc()
+# define GC_OP_NEW_OOM_CHECK(obj)
 #endif // !GC_NEW_ABORTS_ON_OOM && !GC_INCLUDE_NEW
 
 #ifdef GC_NAMESPACE

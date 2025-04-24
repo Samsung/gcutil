@@ -892,6 +892,13 @@ GC_push_regs_and_stack(ptr_t cold_gc_frame)
   GC_with_callee_saves_pushed(GC_push_current_stack, cold_gc_frame);
 }
 
+STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+GC_API void GC_CALL
+GC_register_mark_stack_func(GC_mark_stack_func func)
+{
+  GC_mark_stack_func_proc = func;
+}
+
 /* Call the mark routines (GC_push_one for a single pointer,            */
 /* GC_push_conditional on groups of pointers) on every top level        */
 /* accessible pointer.  If all is false, arrange to push only possibly  */
@@ -967,6 +974,12 @@ GC_push_roots(GC_bool all, ptr_t cold_gc_frame)
   /* overflow the mark stack.  This is usually done by saving   */
   /* the current context on the stack, and then just tracing    */
   /* from the stack.                                            */
+
+  if (GC_mark_stack_func_proc) {
+    (*GC_mark_stack_func_proc)();
+    return;
+  }
+
 #ifdef STACK_NOT_SCANNED
   UNUSED_ARG(cold_gc_frame);
 #else
