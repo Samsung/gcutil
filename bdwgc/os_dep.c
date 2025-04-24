@@ -468,7 +468,7 @@ GC_init_linux_data_start(void)
 {
   ptr_t data_end = DATAEND;
 
-#  if defined(TIZEN) || defined(PLATFORM_ANDROID)
+#  if defined(HOST_TIZEN) || defined(HOST_ANDROID)
   GC_data_start = DATAEND;
   return;
 #  endif
