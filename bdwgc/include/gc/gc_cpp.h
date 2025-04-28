@@ -125,6 +125,14 @@ by UseGC.  GC is an alias for UseGC, unless GC_NAME_CONFLICT is defined.
 
 #include "gc.h"
 
+// disable new operator overriding on windows
+#ifdef _MSC_VER
+#define GC_NO_OPERATOR_NEW_ARRAY
+#define GC_NO_INLINE_STD_NEW
+#define GC_NO_OPERATOR_SIZED_DELETE
+#define GC_NO_OPERATOR_NEW_NOTHROW
+#endif
+
 #ifdef GC_INCLUDE_NEW
 #  include <new> // for std, bad_alloc
 #endif
