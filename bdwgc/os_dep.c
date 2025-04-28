@@ -2368,45 +2368,48 @@ GC_unix_mmap_get_mem(size_t bytes)
   GC_ASSERT(GC_page_size != 0);
   if (bytes & (GC_page_size - 1))
     ABORT("Bad GET_MEM arg");
-  /* Note: it is essential for CHERI to have only address part in   */
-  /* last_addr without metadata (thus the variable is of word type  */
-  /* intentionally), otherwise mmap() fails setting errno to EPROT. */
-#   if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-    if (last_addr == 0) {
+    /* Note: it is essential for CHERI to have only address part in   */
+    /* last_addr without metadata (thus the variable is of word type  */
+    /* intentionally), otherwise mmap() fails setting errno to EPROT. */
+#      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (last_addr == 0) {
+    last_addr = (ptr_t)0x1000;
+  }
+#        if defined(MAP_32BIT)
+  result = mmap(
+      last_addr, bytes,
+      (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
+      GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0 /* offset */);
+#        else
+  int retry = 0;
+  while ((size_t)last_addr < 1073741824L * 4) {
+    result = mmap(last_addr, bytes,
+                  (PROT_READ | PROT_WRITE)
+                      | (GC_pages_executable ? PROT_EXEC : 0),
+                  GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd,
+                  0 /* offset */);
+    if (result != MAP_FAILED) {
+      if (((size_t)result + bytes) > 1073741824L * 4 && retry == 0) {
+        retry = 1;
         last_addr = (ptr_t)0x1000;
+        continue;
+      } else {
+        break;
+      }
     }
-#     if defined(MAP_32BIT)
-    result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
-                                    | (GC_pages_executable ? PROT_EXEC : 0),
-                  GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0/* offset */);
-#     else
-    int retry = 0;
-    while ((size_t)last_addr < 1073741824L * 4) {
-        result = mmap(last_addr, bytes, (PROT_READ | PROT_WRITE)
-                                        | (GC_pages_executable ? PROT_EXEC : 0),
-                      GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd, 0/* offset */);
-        if (result != MAP_FAILED) {
-            if (((size_t)result + bytes) > 1073741824L * 4 && retry == 0) {
-                retry = 1;
-                last_addr = (ptr_t)0x1000;
-                continue;
-            } else {
-                break;
-            }
-        }
-        last_addr = (ptr_t)((size_t)last_addr + GC_page_size);
-    }
+    last_addr = (ptr_t)((size_t)last_addr + GC_page_size);
+  }
 
-    if (((size_t)result + bytes) > 1073741824L * 4) {
-        ABORT("Cannot allocate memory");
-    }
-#     endif
-#   else
-    result
-        = mmap(MAKE_CPTR(last_addr), bytes,
-            (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
-            GC_MMAP_FLAGS | OPT_MAP_ANON, zero_fd, 0 /* offset */);
-#   endif
+  if (((size_t)result + bytes) > 1073741824L * 4) {
+    ABORT("Cannot allocate memory");
+  }
+#        endif
+#      else
+  result
+      = mmap(MAKE_CPTR(last_addr), bytes,
+             (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
+             GC_MMAP_FLAGS | OPT_MAP_ANON, zero_fd, 0 /* offset */);
+#      endif
 #      undef IGNORE_PAGES_EXECUTABLE
 
   if (EXPECT(MAP_FAILED == result, FALSE)) {
@@ -2680,43 +2683,40 @@ GC_get_mem(size_t bytes)
     /* available.  Otherwise we waste resources or possibly */
     /* cause VirtualAlloc to fail (observed in Windows 2000 */
     /* SP2).                                                */
-#       if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-        static ptr_t base_address = NULL;
-        if (base_address == NULL) {
-          base_address = GC_sysinfo.lpMinimumApplicationAddress;
-        }
-        int retry_count = 0;
-        while (retry_count < 2) {
-          result = (ptr_t)VirtualAlloc(base_address,
-            SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
-            GetWriteWatch_alloc_flag
-            | (MEM_COMMIT | MEM_RESERVE)
+#    if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    static ptr_t base_address = NULL;
+    if (base_address == NULL) {
+      base_address = GC_sysinfo.lpMinimumApplicationAddress;
+    }
+    int retry_count = 0;
+    while (retry_count < 2) {
+      result = (ptr_t)VirtualAlloc(
+          base_address, SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+          GetWriteWatch_alloc_flag | (MEM_COMMIT | MEM_RESERVE)
+              | GC_mem_top_down,
+          GC_pages_executable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+      if (!GetLastError()) {
+        break;
+      }
+      SetLastError(0);
+      base_address = (ptr_t)((size_t)base_address
+                             + SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD));
+      if (base_address > 1073741824ULL * 4) {
+        retry_count++;
+        base_address = GC_sysinfo.lpMinimumApplicationAddress;
+      }
+    }
+    base_address = result;
+    if (((size_t)result + bytes) > 1073741824ULL * 4) {
+      ABORT("Cannot allocate memory");
+    }
+#    else
+    result = (ptr_t)VirtualAlloc(
+        NULL, SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+        GetWriteWatch_alloc_flag | (MEM_COMMIT | MEM_RESERVE)
             | GC_mem_top_down,
-            GC_pages_executable ? PAGE_EXECUTE_READWRITE :
-            PAGE_READWRITE);
-          if (!GetLastError()) {
-            break;
-          }
-          SetLastError(0);
-          base_address = (ptr_t)((size_t)base_address + SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD));
-          if (base_address > 1073741824ULL * 4) {
-            retry_count++;
-            base_address = GC_sysinfo.lpMinimumApplicationAddress;
-          }
-        }
-        base_address = result;
-        if (((size_t)result + bytes) > 1073741824ULL * 4) {
-          ABORT("Cannot allocate memory");
-        }
-#       else
-        result = (ptr_t)VirtualAlloc(NULL,
-          SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
-          GetWriteWatch_alloc_flag
-          | (MEM_COMMIT | MEM_RESERVE)
-          | GC_mem_top_down,
-          GC_pages_executable ? PAGE_EXECUTE_READWRITE :
-          PAGE_READWRITE);
-#       endif
+        GC_pages_executable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+#    endif
 #    undef IGNORE_PAGES_EXECUTABLE
   }
 #  endif

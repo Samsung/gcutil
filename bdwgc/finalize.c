@@ -1319,7 +1319,7 @@ GC_should_invoke_finalizers(void)
 GC_API int GC_CALL
 GC_invoke_finalizers(void)
 {
-  unsigned char* pnested = GC_check_finalizer_nested();
+  unsigned char *pnested = GC_check_finalizer_nested();
   if (pnested == NULL) {
     // if we are inside another GC_invoke_finalizers()
     // skip GC_invoke_finalizers() immediately
@@ -1378,9 +1378,9 @@ GC_invoke_finalizers(void)
   }
 
   *pnested = 0; /* Reset since no more finalizers. */
-#ifndef THREADS
+#  ifndef THREADS
   GC_ASSERT(NULL == GC_fnlz_roots.finalize_now);
-#endif
+#  endif
 
   return count;
 }
@@ -1444,7 +1444,7 @@ GC_notify_or_invoke_finalizers(void)
 
   if (!GC_finalize_on_demand) {
     UNLOCK();
-    (void) GC_invoke_finalizers();
+    (void)GC_invoke_finalizers();
     return;
   }
 
