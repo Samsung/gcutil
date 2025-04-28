@@ -989,7 +989,11 @@ GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr,
 
   INIT_HDR_CACHE;
 
+#if defined(GC_DEBUG)
   const char *start = GC_USR_PTR_FROM_BASE(addr);
+#else
+  const char *start = addr;
+#endif
   const char *end = ((char *)addr) + GC_size(addr);
 
   GC_word *iterator = (GC_word *)start;
@@ -1019,7 +1023,11 @@ GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
 
   INIT_HDR_CACHE;
 
-  char *start = GC_USR_PTR_FROM_BASE(addr);
+#if defined(GC_DEBUG)
+  const char *start = GC_USR_PTR_FROM_BASE(addr);
+#else
+  const char *start = addr;
+#endif
   int i = 0;
 
   i = proc(start, arr);
