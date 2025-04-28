@@ -325,7 +325,7 @@ GC_complete_ongoing_collection(void)
 #  ifndef GC_TOGGLE_REFS_NOT_NEEDED
 typedef union toggle_ref_u GCToggleRef;
 
-STATIC GC_toggleref_func GC_toggleref_callback = 0;
+STATIC MAY_THREAD_LOCAL GC_toggleref_func GC_toggleref_callback = 0;
 
 GC_INNER void
 GC_process_togglerefs(void)
@@ -496,7 +496,7 @@ GC_toggleref_add(void *obj, int is_strong_ref)
 #  endif /* !GC_TOGGLE_REFS_NOT_NEEDED */
 
 /* Finalizer callback support. */
-STATIC GC_await_finalize_proc GC_object_finalized_proc = 0;
+STATIC MAY_THREAD_LOCAL GC_await_finalize_proc GC_object_finalized_proc = 0;
 
 GC_API void GC_CALL
 GC_set_await_finalize_proc(GC_await_finalize_proc fn)
@@ -712,7 +712,7 @@ GC_unreachable_finalize_mark_proc(ptr_t p)
 
 /* Avoid the work if unreachable finalizable objects are not used.      */
 /* TODO: turn need_unreachable_finalization into a counter */
-static GC_bool need_unreachable_finalization = FALSE;
+static MAY_THREAD_LOCAL GC_bool need_unreachable_finalization = FALSE;
 
 /* Register a finalization function.  See gc.h for details.     */
 /* The last parameter is a procedure that determines            */
@@ -950,9 +950,9 @@ GC_dump_finalization(void)
 #  endif /* !NO_DEBUGGING */
 
 #  ifndef SMALL_CONFIG
-STATIC size_t GC_old_dl_entries = 0; /* for stats printing */
+STATIC MAY_THREAD_LOCAL size_t GC_old_dl_entries = 0; /* for stats printing */
 #    ifndef GC_LONG_REFS_NOT_NEEDED
-STATIC size_t GC_old_ll_entries = 0;
+STATIC MAY_THREAD_LOCAL size_t GC_old_ll_entries = 0;
 #    endif
 #  endif /* !SMALL_CONFIG */
 
@@ -1204,7 +1204,7 @@ GC_finalize(void)
 /* Count of finalizers to run, at most, during a single invocation      */
 /* of GC_invoke_finalizers(); zero means no limit.  Accessed with the   */
 /* allocator lock held.                                                 */
-STATIC unsigned GC_interrupt_finalizers = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_interrupt_finalizers = 0;
 
 #  ifndef JAVA_FINALIZATION_NOT_NEEDED
 
@@ -1385,14 +1385,14 @@ GC_invoke_finalizers(void)
   return count;
 }
 
-static word last_finalizer_notification = 0;
+static MAY_THREAD_LOCAL word last_finalizer_notification = 0;
 
 GC_INNER void
 GC_notify_or_invoke_finalizers(void)
 {
   GC_finalizer_notifier_proc notifier_fn = 0;
 #  if defined(KEEP_BACK_PTRS) || defined(MAKE_BACK_GRAPH)
-  static word last_back_trace_gc_no = 1; /* skip first one */
+  static MAY_THREAD_LOCAL word last_back_trace_gc_no = 1; /* skip first one */
 #  endif
 
 #  if defined(THREADS) && !defined(KEEP_BACK_PTRS) && !defined(MAKE_BACK_GRAPH)
@@ -1407,7 +1407,7 @@ GC_notify_or_invoke_finalizers(void)
 #  if defined(KEEP_BACK_PTRS) || defined(MAKE_BACK_GRAPH)
   if (GC_gc_no != last_back_trace_gc_no) {
 #    ifdef KEEP_BACK_PTRS
-    static GC_bool bt_in_progress = FALSE;
+    static MAY_THREAD_LOCAL GC_bool bt_in_progress = FALSE;
 
     if (!bt_in_progress) {
       long i;

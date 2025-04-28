@@ -26,14 +26,14 @@
 
 /* Number of bytes of memory reclaimed minus the number of bytes        */
 /* originally on free lists which we had to drop.                       */
-GC_INNER GC_signed_word GC_bytes_found = 0;
+GC_INNER MAY_THREAD_LOCAL GC_signed_word GC_bytes_found = 0;
 
 #if defined(PARALLEL_MARK)
 /* Number of threads currently building free lists without holding    */
 /* the allocator lock.  It is not safe to collect if this is nonzero. */
 /* Also, together with the mark lock, it is used as a semaphore       */
 /* during marker threads startup.                                     */
-GC_INNER GC_signed_word GC_fl_builder_count = 0;
+GC_INNER MAY_THREAD_LOCAL GC_signed_word GC_fl_builder_count = 0;
 #endif /* PARALLEL_MARK */
 
 /* We defer printing of leaked objects until we're done with the GC     */
@@ -44,8 +44,8 @@ GC_INNER GC_signed_word GC_fl_builder_count = 0;
 #  ifndef MAX_LEAKED
 #    define MAX_LEAKED 40
 #  endif
-STATIC ptr_t GC_leaked[MAX_LEAKED] = { NULL };
-STATIC unsigned GC_n_leaked = 0;
+STATIC MAY_THREAD_LOCAL ptr_t GC_leaked[MAX_LEAKED] = { NULL };
+STATIC MAY_THREAD_LOCAL unsigned GC_n_leaked = 0;
 #endif
 
 #if !defined(EAGER_SWEEP) && defined(ENABLE_DISCLAIM)
@@ -64,8 +64,8 @@ STATIC void GC_reclaim_unconditionally_marked(void);
 /* since we cannot always print them nicely with the allocator lock   */
 /* held.  We put them here instead of in GC_arrays, since it may be   */
 /* useful to be able to look at them with the debugger.               */
-STATIC ptr_t GC_smashed[MAX_SMASHED] = { 0 };
-STATIC unsigned GC_n_smashed = 0;
+STATIC MAY_THREAD_LOCAL ptr_t GC_smashed[MAX_SMASHED] = { 0 };
+STATIC MAY_THREAD_LOCAL unsigned GC_n_smashed = 0;
 
 GC_INNER void
 GC_add_smashed(ptr_t smashed)
@@ -164,23 +164,24 @@ GC_default_print_heap_obj_proc(ptr_t p)
                                          : "composite");
 }
 
-GC_INNER void (*GC_print_heap_obj)(ptr_t p) = GC_default_print_heap_obj_proc;
+GC_INNER MAY_THREAD_LOCAL void (*GC_print_heap_obj)(ptr_t p)
+    = GC_default_print_heap_obj_proc;
 
 #if !defined(NO_FIND_LEAK) || !defined(SHORT_DBG_HDRS)
 #  ifdef AO_HAVE_store
-GC_INNER volatile AO_t GC_have_errors = 0;
+GC_INNER MAY_THREAD_LOCAL volatile AO_t GC_have_errors = 0;
 #  else
-GC_INNER GC_bool GC_have_errors = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_have_errors = FALSE;
 #  endif
 
-GC_INNER GC_bool GC_debugging_started = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_debugging_started = FALSE;
 
 /* Print all objects on the list after printing any smashed objects.    */
 /* Clear both lists.  Called without the allocator lock held.           */
 GC_INNER void
 GC_print_all_errors(void)
 {
-  static GC_bool printing_errors = FALSE;
+  static MAY_THREAD_LOCAL GC_bool printing_errors = FALSE;
   GC_bool have_errors;
 #  ifndef NO_FIND_LEAK
   unsigned i, n_leaked;
@@ -898,7 +899,7 @@ GC_n_set_marks(hdr *hhdr)
     n_objs = 1;
   n_mark_words = divWORDSZ(n_objs + WORDSZ - 1);
 #    else /* MARK_BIT_PER_GRANULE */
-  n_mark_words = MARK_BITS_SZ;
+  n_mark_words = HB_MARKS_SZ;
 #    endif
   for (i = 0; i < n_mark_words - 1; i++) {
     result += set_bits(hhdr->hb_marks[i]);

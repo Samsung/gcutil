@@ -38,7 +38,7 @@ struct roots GC_static_roots[MAX_ROOT_SETS];
 */
 
 /* Register dynamic library data segments.      */
-int GC_no_dls = 0;
+MAY_THREAD_LOCAL int GC_no_dls = 0;
 
 #if !defined(NO_DEBUGGING) || defined(GC_ASSERTIONS)
 /* Should return the same value as GC_root_size.      */
@@ -120,7 +120,7 @@ add_roots_to_index(struct roots *p)
 }
 #endif /* !ANY_MSWIN */
 
-GC_INNER word GC_root_size = 0;
+MAY_THREAD_LOCAL GC_INNER word GC_root_size = 0;
 
 GC_API void GC_CALL
 GC_add_roots(void *b, void *e)
@@ -467,12 +467,13 @@ GC_API int GC_CALL
 GC_is_tmp_root(void *p)
 {
 #  ifndef HAS_REAL_READER_LOCK
-  static size_t last_root_set; /* initialized to 0; no shared access */
+  static MAY_THREAD_LOCAL size_t
+      last_root_set; /* initialized to 0; no shared access */
 #  elif defined(AO_HAVE_load) || defined(AO_HAVE_store)
-  static volatile AO_t last_root_set;
+  static MAY_THREAD_LOCAL volatile AO_t last_root_set;
 #  else
   /* Note: a race is acceptable, it's just a cached index.  */
-  static volatile size_t last_root_set;
+  static MAY_THREAD_LOCAL volatile size_t last_root_set;
 #  endif
   size_t i;
   int res;
@@ -864,7 +865,7 @@ GC_push_current_stack(ptr_t cold_gc_frame, void *context)
 #endif /* !THREADS */
 }
 
-GC_INNER void (*GC_push_typed_structures)(void) = 0;
+GC_INNER MAY_THREAD_LOCAL void (*GC_push_typed_structures)(void) = 0;
 
 GC_INNER void
 GC_cond_register_dynamic_libraries(void)
@@ -892,7 +893,7 @@ GC_push_regs_and_stack(ptr_t cold_gc_frame)
   GC_with_callee_saves_pushed(GC_push_current_stack, cold_gc_frame);
 }
 
-STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+STATIC MAY_THREAD_LOCAL GC_mark_stack_func GC_mark_stack_func_proc = 0;
 GC_API void GC_CALL
 GC_register_mark_stack_func(GC_mark_stack_func func)
 {

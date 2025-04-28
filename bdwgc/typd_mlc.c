@@ -40,16 +40,16 @@
 #include "gc/gc_typed.h"
 
 /* Object kind for objects with indirect (possibly extended) descriptors. */
-STATIC int GC_explicit_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_explicit_kind = 0;
 
 /* Object kind for objects with complex descriptors and GC_array_mark_proc. */
-STATIC int GC_array_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_array_kind = 0;
 
 #define ED_INITIAL_SIZE 100
 
 /* Indices of the typed mark procedures.        */
-STATIC unsigned GC_typed_mark_proc_index = 0;
-STATIC unsigned GC_array_mark_proc_index = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_typed_mark_proc_index = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_array_mark_proc_index = 0;
 
 STATIC void
 GC_push_typed_structures_proc(void)
@@ -115,7 +115,7 @@ GC_add_ext_descriptor(const word *bm, size_t nbits)
 }
 
 /* Table of bitmap descriptors for n pointer-long all-pointer objects.  */
-STATIC GC_descr GC_bm_table[CPP_WORDSZ / 2];
+STATIC MAY_THREAD_LOCAL GC_descr GC_bm_table[CPP_WORDSZ / 2];
 
 /* Return a descriptor for the concatenation of 2 objects, each one is  */
 /* lpw pointers long and described by descriptor d.  The result is      */

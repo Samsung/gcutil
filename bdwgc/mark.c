@@ -68,23 +68,23 @@ GC_noop1_ptr(volatile void *p)
 /* GC_init is called.  It is done here, since we need to deal with mark */
 /* descriptors.  Note: GC_obj_kinds[NORMAL].ok_descriptor is adjusted   */
 /* in GC_init() for EXTRA_BYTES.                                        */
-GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
-  /* PTRFREE */ { &GC_aobjfreelist[0], 0 /* filled in dynamically */,
+GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
+  /* PTRFREE */ { 0, 0 /* filled in dynamically */,
                   /* 0 | */ GC_DS_LENGTH, FALSE,
                   FALSE
                       /*, */ OK_DISCLAIM_INITZ },
   /* NORMAL */
-  { &GC_objfreelist[0], 0,
+  { 0, 0,
     /* 0 | */ GC_DS_LENGTH, TRUE /* add length to descr */,
     TRUE
         /*, */ OK_DISCLAIM_INITZ },
   /* UNCOLLECTABLE */
-  { &GC_uobjfreelist[0], 0,
+  { 0, 0,
     /* 0 | */ GC_DS_LENGTH, TRUE /* add length to descr */,
     TRUE
         /*, */ OK_DISCLAIM_INITZ },
 #ifdef GC_ATOMIC_UNCOLLECTABLE
-  { &GC_auobjfreelist[0], 0,
+  { 0, 0,
     /* 0 | */ GC_DS_LENGTH, FALSE,
     FALSE
         /*, */ OK_DISCLAIM_INITZ },
@@ -102,7 +102,7 @@ GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
 #if !defined(GC_DISABLE_INCREMENTAL)
 /* Number of dirty pages we marked from, excluding pointer-free       */
 /* pages, etc.  Used for logging only.                                */
-STATIC word GC_n_rescuing_pages = 0;
+STATIC MAY_THREAD_LOCAL word GC_n_rescuing_pages = 0;
 #endif
 
 GC_API void GC_CALL
@@ -368,7 +368,7 @@ push_roots_and_advance(GC_bool push_all, ptr_t cold_gc_frame)
     GC_mark_state = MS_ROOTS_PUSHED;
 }
 
-STATIC GC_on_mark_stack_empty_proc GC_on_mark_stack_empty;
+STATIC MAY_THREAD_LOCAL GC_on_mark_stack_empty_proc GC_on_mark_stack_empty;
 
 GC_API void GC_CALL
 GC_set_on_mark_stack_empty(GC_on_mark_stack_empty_proc fn)
@@ -571,7 +571,7 @@ GC_mark_some(ptr_t cold_gc_frame)
 #  else
 #    if defined(USE_PROC_FOR_LIBRARIES) && !defined(DEFAULT_VDB)
     if (GC_auto_incremental) {
-      static GC_bool is_warned = FALSE;
+      static MAY_THREAD_LOCAL GC_bool is_warned = FALSE;
 
       if (!is_warned) {
         is_warned = TRUE;
@@ -610,7 +610,7 @@ handle_ex:
   GC_reset_fault_handler();
 #  endif
   {
-    static word warned_gc_no;
+    static MAY_THREAD_LOCAL word warned_gc_no;
 
     /* Report caught ACCESS_VIOLATION, once per collection. */
     if (warned_gc_no != GC_gc_no) {
@@ -1042,17 +1042,17 @@ GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
 #ifdef PARALLEL_MARK
 
 /* Note: this is protected by the mark lock.  */
-STATIC GC_bool GC_help_wanted = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_help_wanted = FALSE;
 
 /* Number of running helpers.  Protected by the mark lock.    */
-STATIC unsigned GC_helper_count = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_helper_count = 0;
 
 /* Number of active helpers.  May increase and decrease within each   */
 /* mark cycle; but once it returns to 0, it stays zero for the cycle. */
 /* Protected by the mark lock.                                        */
-STATIC unsigned GC_active_count = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_active_count = 0;
 
-GC_INNER word GC_mark_no = 0;
+GC_INNER MAY_THREAD_LOCAL word GC_mark_no = 0;
 
 #  ifdef LINT2
 #    define LOCAL_MARK_STACK_SIZE (HBLKSIZE / 8)
@@ -1416,7 +1416,7 @@ static void
 alloc_mark_stack(size_t n)
 {
 #ifdef GWW_VDB
-  static GC_bool GC_incremental_at_stack_alloc = FALSE;
+  static MAY_THREAD_LOCAL GC_bool GC_incremental_at_stack_alloc = FALSE;
 
   GC_bool recycle_old;
 #endif

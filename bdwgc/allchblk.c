@@ -18,9 +18,9 @@
 #include "private/gc_priv.h"
 
 #ifdef GC_USE_ENTIRE_HEAP
-int GC_use_entire_heap = TRUE;
+MAY_THREAD_LOCAL int GC_use_entire_heap = TRUE;
 #else
-int GC_use_entire_heap = FALSE;
+MAY_THREAD_LOCAL int GC_use_entire_heap = FALSE;
 #endif
 
 /* Free heap blocks are kept on one of several free lists, depending on */
@@ -50,7 +50,7 @@ int GC_use_entire_heap = FALSE;
 #ifndef GC_GCJ_SUPPORT
 STATIC
 #endif
-struct hblk *GC_hblkfreelist[N_HBLK_FLS + 1] = { 0 };
+MAY_THREAD_LOCAL struct hblk *GC_hblkfreelist[N_HBLK_FLS + 1] = { 0 };
 
 GC_API void GC_CALL
 GC_iterate_free_hblks(GC_walk_free_blk_fn fn, void *client_data)
@@ -70,7 +70,7 @@ GC_iterate_free_hblks(GC_walk_free_blk_fn fn, void *client_data)
 #ifndef GC_GCJ_SUPPORT
 STATIC
 #endif
-word GC_free_bytes[N_HBLK_FLS + 1] = { 0 };
+MAY_THREAD_LOCAL word GC_free_bytes[N_HBLK_FLS + 1] = { 0 };
 
 /* Return the largest n such that the number of free bytes on lists     */
 /* n .. N_HBLK_FLS is greater or equal to GC_max_large_allocd_bytes     */
@@ -845,11 +845,11 @@ find_nonbl_hblk(struct hblk *last_hbp, size_t size_remain,
 
 #ifndef NO_BLACK_LISTING
 /* Number of warnings suppressed so far.        */
-STATIC long GC_large_alloc_warn_suppressed = 0;
+STATIC MAY_THREAD_LOCAL long GC_large_alloc_warn_suppressed = 0;
 
 /* Counter of the cases when found block by GC_allochblk_nth is     */
 /* blacklisted completely.                                          */
-STATIC unsigned GC_drop_blacklisted_count = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_drop_blacklisted_count = 0;
 
 /* Allocate and drop the block in small chunks, to maximize the chance  */
 /* that we will recover some later.  hhdr should correspond to hbp.     */

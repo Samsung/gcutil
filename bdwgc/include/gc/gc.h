@@ -88,7 +88,7 @@ GC_API GC_VERSION_VAL_T GC_CALL GC_get_version(void);
 /* Counter incremented once per collection.  Includes empty collections */
 /* at startup.  GC_get_gc_no() is unsynchronized, so it requires        */
 /* GC_call_with_reader_lock() to avoid data race on multiprocessors.    */
-GC_API GC_ATTR_DEPRECATED GC_word GC_gc_no;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_word GC_gc_no;
 GC_API GC_word GC_CALL GC_get_gc_no(void);
 
 #ifdef GC_THREADS
@@ -102,7 +102,7 @@ GC_API GC_word GC_CALL GC_get_gc_no(void);
 /* initialization.  After setting, GC_parallel value is equal to the  */
 /* number of marker threads minus one (i.e. the number of existing    */
 /* parallel marker threads excluding the initiating one).             */
-GC_API GC_ATTR_DEPRECATED int GC_parallel;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_parallel;
 #endif
 
 /* Return value of GC_parallel.  Does not acquire the allocator lock.   */
@@ -131,7 +131,7 @@ GC_API void GC_CALL GC_set_markers_count(unsigned);
 /* the allocator lock (in the reader mode in case of the getter) to     */
 /* avoid data race.                                                     */
 typedef void *(GC_CALLBACK *GC_oom_func)(size_t /* bytes_requested */);
-GC_API GC_ATTR_DEPRECATED GC_oom_func GC_oom_fn;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_oom_func GC_oom_fn;
 GC_API void GC_CALL GC_set_oom_fn(GC_oom_func) GC_ATTR_NONNULL(1);
 GC_API GC_oom_func GC_CALL GC_get_oom_fn(void);
 
@@ -140,7 +140,7 @@ GC_API GC_oom_func GC_CALL GC_get_oom_fn(void);
 /* and the getter acquire the allocator lock (in the reader mode in     */
 /* case of the getter).                                                 */
 typedef void(GC_CALLBACK *GC_on_heap_resize_proc)(GC_word /* new_size */);
-GC_API GC_ATTR_DEPRECATED GC_on_heap_resize_proc GC_on_heap_resize;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_on_heap_resize_proc GC_on_heap_resize;
 GC_API void GC_CALL GC_set_on_heap_resize(GC_on_heap_resize_proc);
 GC_API GC_on_heap_resize_proc GC_CALL GC_get_on_heap_resize(void);
 
@@ -187,7 +187,7 @@ GC_API GC_on_thread_event_proc GC_CALL GC_get_on_thread_event(void);
 /* initialization (and, thus, it does not use or need synchronization). */
 /* The mode is supported only if the library has been compiled without  */
 /* NO_FIND_LEAK macro defined.                                          */
-GC_API GC_ATTR_DEPRECATED int GC_find_leak;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_find_leak;
 GC_API void GC_CALL GC_set_find_leak(int);
 GC_API int GC_CALL GC_get_find_leak(void);
 
@@ -202,7 +202,7 @@ GC_API int GC_CALL GC_get_find_leak(void);
 /* "off the end" pointer recognition (but the size is not increased     */
 /* for uncollectible objects as well as for ignore-off-page objects of  */
 /* at least heap block size).                                           */
-GC_API GC_ATTR_DEPRECATED int GC_all_interior_pointers;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_all_interior_pointers;
 GC_API void GC_CALL GC_set_all_interior_pointers(int);
 GC_API int GC_CALL GC_get_all_interior_pointers(void);
 
@@ -210,7 +210,7 @@ GC_API int GC_CALL GC_get_all_interior_pointers(void);
 /* GC_invoke_finalizers call.  The default is determined by whether the */
 /* FINALIZE_ON_DEMAND macro is defined when the collector is built.     */
 /* The setter and the getter are unsynchronized.                        */
-GC_API GC_ATTR_DEPRECATED int GC_finalize_on_demand;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_finalize_on_demand;
 GC_API void GC_CALL GC_set_finalize_on_demand(int);
 GC_API int GC_CALL GC_get_finalize_on_demand(void);
 
@@ -220,7 +220,7 @@ GC_API int GC_CALL GC_get_finalize_on_demand(void);
 /* by JAVA_FINALIZATION macro.  Enables                                 */
 /* GC_register_finalizer_unreachable to work correctly.  The setter and */
 /* the getter are unsynchronized.                                       */
-GC_API GC_ATTR_DEPRECATED int GC_java_finalization;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_java_finalization;
 GC_API void GC_CALL GC_set_java_finalization(int);
 GC_API int GC_CALL GC_get_java_finalization(void);
 
@@ -232,7 +232,7 @@ GC_API int GC_CALL GC_get_java_finalization(void);
 /* getter acquire the allocator lock (in the reader mode in case of the */
 /* getter).                                                             */
 typedef void(GC_CALLBACK *GC_finalizer_notifier_proc)(void);
-GC_API GC_ATTR_DEPRECATED GC_finalizer_notifier_proc GC_finalizer_notifier;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_finalizer_notifier_proc GC_finalizer_notifier;
 GC_API void GC_CALL GC_set_finalizer_notifier(GC_finalizer_notifier_proc);
 GC_API GC_finalizer_notifier_proc GC_CALL GC_get_finalizer_notifier(void);
 
@@ -244,10 +244,10 @@ GC_API GC_finalizer_notifier_proc GC_CALL GC_get_finalizer_notifier(void);
 typedef void(GC_CALLBACK *GC_valid_ptr_print_proc_t)(void *);
 typedef void(GC_CALLBACK *GC_same_obj_print_proc_t)(void * /* p */,
                                                     void * /* q */);
-GC_API GC_ATTR_DEPRECATED GC_same_obj_print_proc_t GC_same_obj_print_proc;
-GC_API GC_ATTR_DEPRECATED GC_valid_ptr_print_proc_t
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_same_obj_print_proc_t GC_same_obj_print_proc;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_valid_ptr_print_proc_t
     GC_is_valid_displacement_print_proc;
-GC_API GC_ATTR_DEPRECATED GC_valid_ptr_print_proc_t GC_is_visible_print_proc;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_valid_ptr_print_proc_t GC_is_visible_print_proc;
 GC_API void GC_CALL GC_set_same_obj_print_proc(GC_same_obj_print_proc_t)
     GC_ATTR_NONNULL(1);
 GC_API GC_same_obj_print_proc_t GC_CALL GC_get_same_obj_print_proc(void);
@@ -270,11 +270,11 @@ GC_API
 #ifndef GC_DONT_GC
 GC_ATTR_DEPRECATED
 #endif
-int GC_dont_gc;
+GC_MAY_THREAD_LOCAL int GC_dont_gc;
 
 /* Do not expand the heap unless explicitly requested or forced to.     */
 /* The setter and the getter are unsynchronized.                        */
-GC_API GC_ATTR_DEPRECATED int GC_dont_expand;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_dont_expand;
 GC_API void GC_CALL GC_set_dont_expand(int);
 GC_API int GC_CALL GC_get_dont_expand(void);
 
@@ -284,7 +284,7 @@ GC_API int GC_CALL GC_get_dont_expand(void);
 /* during each collection cycle.  It is likely to result in a larger    */
 /* working set, but lower collection frequencies, and hence fewer       */
 /* instructions executed in the collector.                              */
-GC_API GC_ATTR_DEPRECATED int GC_use_entire_heap;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_use_entire_heap;
 
 /* Number of partial collections between full collections.  Matters     */
 /* only if GC_is_incremental_mode().  Full collections are also         */
@@ -295,7 +295,7 @@ GC_API GC_ATTR_DEPRECATED int GC_use_entire_heap;
 /* (GC_call_with_reader_lock() in case of the getter) is required to    */
 /* avoid data race (if the value is modified after the collector is put */
 /* into the multi-threaded mode).                                       */
-GC_API GC_ATTR_DEPRECATED int GC_full_freq;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_full_freq;
 GC_API void GC_CALL GC_set_full_freq(int);
 GC_API int GC_CALL GC_get_full_freq(void);
 
@@ -306,7 +306,7 @@ GC_API int GC_CALL GC_get_full_freq(void);
 /* (GC_call_with_reader_lock() in case of the getter) is required to    */
 /* avoid data race (if the value is modified after the collector is put */
 /* into the multi-threaded mode).                                       */
-GC_API GC_ATTR_DEPRECATED GC_word GC_non_gc_bytes;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_word GC_non_gc_bytes;
 GC_API void GC_CALL GC_set_non_gc_bytes(GC_word);
 GC_API GC_word GC_CALL GC_get_non_gc_bytes(void);
 
@@ -317,7 +317,7 @@ GC_API GC_word GC_CALL GC_get_non_gc_bytes(void);
 /* environments like Microsoft Windows and Apple's Darwin, this may     */
 /* also prevent registration of the main data segment as a part of the  */
 /* root set.)  The setter and the getter are unsynchronized.            */
-GC_API GC_ATTR_DEPRECATED int GC_no_dls;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_no_dls;
 GC_API void GC_CALL GC_set_no_dls(int);
 GC_API int GC_CALL GC_get_no_dls(void);
 
@@ -334,7 +334,7 @@ GC_API int GC_CALL GC_get_no_dls(void);
 /* getter) is required to avoid data race (if the value is modified     */
 /* after the collector is put into the multi-threaded mode).            */
 /* In GC v7.1 and before, the setter returned the old value.            */
-GC_API GC_ATTR_DEPRECATED GC_word GC_free_space_divisor;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_word GC_free_space_divisor;
 GC_API void GC_CALL GC_set_free_space_divisor(GC_word);
 GC_API GC_word GC_CALL GC_get_free_space_divisor(void);
 
@@ -344,7 +344,7 @@ GC_API GC_word GC_CALL GC_get_free_space_divisor(void);
 /* (GC_call_with_reader_lock() in case of the getter) is required to    */
 /* avoid data race (if the value is modified after the collector is put */
 /* into the multi-threaded mode).                                       */
-GC_API GC_ATTR_DEPRECATED GC_word GC_max_retries;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_word GC_max_retries;
 GC_API void GC_CALL GC_set_max_retries(GC_word);
 GC_API GC_word GC_CALL GC_get_max_retries(void);
 
@@ -357,7 +357,7 @@ GC_API GC_word GC_CALL GC_get_max_retries(void);
 /* after the collector initialization has no effect.  Portable clients  */
 /* should use GC_set_stackbottom(), GC_get_stack_base(),                */
 /* GC_call_with_gc_active() and GC_register_my_thread() instead.        */
-GC_API GC_ATTR_DEPRECATED char *GC_stackbottom;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED char *GC_stackbottom;
 
 /* Do not collect as part of the collector initialization.  Should be   */
 /* set only if the client wants a chance to manually initialize the     */
@@ -365,7 +365,7 @@ GC_API GC_ATTR_DEPRECATED char *GC_stackbottom;
 /* Wizards only.  The setter and the getter are unsynchronized (and no  */
 /* external locking is needed since the value is accessed at the the    */
 /* collector initialization only).                                      */
-GC_API GC_ATTR_DEPRECATED int GC_dont_precollect;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_dont_precollect;
 GC_API void GC_CALL GC_set_dont_precollect(int);
 GC_API int GC_CALL GC_get_dont_precollect(void);
 
@@ -381,7 +381,7 @@ GC_API int GC_CALL GC_get_dont_precollect(void);
 /* after the collector is put into the multi-threaded mode).  The       */
 /* setter does not update the value of the nanosecond part of the time  */
 /* limit (it is zero unless ever set by GC_set_time_limit_tv call).     */
-GC_API GC_ATTR_DEPRECATED unsigned long GC_time_limit;
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED unsigned long GC_time_limit;
 #define GC_TIME_UNLIMITED 999999
 GC_API void GC_CALL GC_set_time_limit(unsigned long);
 GC_API unsigned long GC_CALL GC_get_time_limit(void);

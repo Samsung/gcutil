@@ -697,7 +697,7 @@ GC_INNER void GC_start_world(void);
 #ifdef SMALL_CONFIG
 #  define GC_on_abort(msg) (void)0 /* be silent on abort */
 #else
-GC_API_PRIV GC_abort_func GC_on_abort;
+GC_API_PRIV MAY_THREAD_LOCAL GC_abort_func GC_on_abort;
 #endif
 #if defined(CPPCHECK)
 #  define ABORT(msg)    \
@@ -779,7 +779,7 @@ GC_API_PRIV GC_abort_func GC_on_abort;
 /* "%"WARN_PRIuPTR.                                                     */
 #define WARN(msg, arg) \
   GC_current_warn_proc("GC Warning: " msg, (GC_uintptr_t)(arg))
-GC_EXTERN GC_warn_proc GC_current_warn_proc;
+GC_EXTERN MAY_THREAD_LOCAL GC_warn_proc GC_current_warn_proc;
 
 /* Print format type macro for decimal GC_signed_word value passed      */
 /* WARN().  This could be redefined for Win64 or LLP64, but typically   */
@@ -1741,7 +1741,7 @@ struct _GC_arrays {
   bottom_index *_top_index[TOP_SZ];
 };
 
-GC_API_PRIV struct _GC_arrays GC_arrays;
+GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 
 #define GC_all_nils GC_arrays._all_nils
 #define GC_atomic_in_use GC_arrays._atomic_in_use
@@ -1788,7 +1788,7 @@ GC_API_PRIV struct _GC_arrays GC_arrays;
 #    endif
 #  endif
 #endif /* !MAXOBJKINDS */
-GC_EXTERN struct obj_kind {
+GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
   /* Array of free-list headers for this kind of object.  Point either  */
   /* to GC_arrays or to storage allocated with GC_scratch_alloc.        */
   void **ok_freelist;
@@ -1862,13 +1862,13 @@ extern ptr_t GC_aobjfreelist[MAXOBJGRANULES + 1];
 #  define GC_N_KINDS_INITIAL_VALUE 3
 #endif
 
-GC_EXTERN unsigned GC_n_kinds;
+GC_EXTERN MAY_THREAD_LOCAL unsigned GC_n_kinds;
 
 /* May mean the allocation granularity size, not page size.     */
-GC_EXTERN size_t GC_page_size;
+GC_EXTERN MAY_THREAD_LOCAL size_t GC_page_size;
 
 #ifdef REAL_PAGESIZE_NEEDED
-GC_EXTERN size_t GC_real_page_size;
+GC_EXTERN MAY_THREAD_LOCAL size_t GC_real_page_size;
 #else
 #  define GC_real_page_size GC_page_size
 #endif
@@ -1918,18 +1918,18 @@ GC_INNER void *GC_unix_get_mem(size_t lb);
 #endif
 
 #ifdef ANY_MSWIN
-GC_EXTERN SYSTEM_INFO GC_sysinfo;
+GC_EXTERN MAY_THREAD_LOCAL SYSTEM_INFO GC_sysinfo;
 GC_INNER GC_bool GC_is_heap_base(const void *p);
 #endif
 
 #ifdef GC_GCJ_SUPPORT
 /* Note: the following variables remain visible to GNU GCJ. */
-extern struct hblk *GC_hblkfreelist[];
-extern word GC_free_bytes[];
+extern MAY_THREAD_LOCAL struct hblk *GC_hblkfreelist[];
+extern MAY_THREAD_LOCAL word GC_free_bytes[];
 #endif
 
 /* Total size of registered root sections.      */
-GC_EXTERN word GC_root_size;
+GC_EXTERN MAY_THREAD_LOCAL word GC_root_size;
 
 /* This is used by GC_do_blocking[_inner]().    */
 struct blocking_data {
@@ -1953,19 +1953,19 @@ struct GC_traced_stack_sect_s {
 GC_INNER void
 GC_push_all_stack_sections(ptr_t lo, ptr_t hi,
                            struct GC_traced_stack_sect_s *traced_stack_sect);
-GC_EXTERN word GC_total_stacksize; /* updated on every push_all_stacks */
+GC_EXTERN MAY_THREAD_LOCAL word GC_total_stacksize; /* updated on every push_all_stacks */
 #else
-GC_EXTERN ptr_t GC_blocked_sp;
+GC_EXTERN MAY_THREAD_LOCAL ptr_t GC_blocked_sp;
 
 /* Points to the "frame" data held in stack by the innermost      */
 /* GC_call_with_gc_active().  NULL if no such "frame" active.     */
-GC_EXTERN struct GC_traced_stack_sect_s *GC_traced_stack_sect;
+GC_EXTERN MAY_THREAD_LOCAL struct GC_traced_stack_sect_s *GC_traced_stack_sect;
 #endif /* !THREADS */
 
 #if defined(E2K) && defined(THREADS) || defined(IA64)
 /* The bottom of the register stack of the primordial thread. */
 /* E2K: holds the offset (ps_ofs) instead of a pointer.       */
-GC_EXTERN ptr_t GC_register_stackbottom;
+GC_EXTERN MAY_THREAD_LOCAL ptr_t GC_register_stackbottom;
 #endif
 
 #ifdef IA64
@@ -2125,7 +2125,7 @@ GC_INNER void GC_push_roots(GC_bool all, ptr_t cold_gc_frame);
 /* to be non-zero.  A client supplied replacement should also call the  */
 /* original function.  Remains externally visible as used by some       */
 /* well-known 3rd-party software (e.g., ECL) currently.                 */
-GC_API_PRIV GC_push_other_roots_proc GC_push_other_roots;
+GC_API_PRIV MAY_THREAD_LOCAL GC_push_other_roots_proc GC_push_other_roots;
 
 #ifdef THREADS
 GC_INNER void GC_push_thread_structures(void);
@@ -2133,7 +2133,7 @@ GC_INNER void GC_push_thread_structures(void);
 
 /* A pointer set to GC_push_typed_structures_proc() lazily so that we   */
 /* can avoid linking in the typed allocation support if unused.         */
-GC_EXTERN void (*GC_push_typed_structures)(void);
+GC_EXTERN MAY_THREAD_LOCAL void (*GC_push_typed_structures)(void);
 
 typedef void (*GC_with_callee_saves_func)(ptr_t arg, void *context);
 GC_INNER void GC_with_callee_saves_pushed(GC_with_callee_saves_func fn,
@@ -2376,11 +2376,11 @@ void GC_add_trace_entry(const char *caller_fn_name, ptr_t arg1, ptr_t arg2);
 /* Average number of bytes between blacklisted blocks.  Approximate.    */
 /* Counts only blocks that are "stack-blacklisted", i.e. that are       */
 /* problematic in the interior of an object.                            */
-GC_EXTERN word GC_black_list_spacing;
+GC_EXTERN MAY_THREAD_LOCAL word GC_black_list_spacing;
 
 /* The interval between unsuppressed warnings about repeated allocation */
 /* of a very large block.                                               */
-GC_EXTERN long GC_large_alloc_warn_interval;
+GC_EXTERN MAY_THREAD_LOCAL long GC_large_alloc_warn_interval;
 
 /* Black listing: */
 GC_INNER void GC_bl_init(void);
@@ -2513,7 +2513,7 @@ GC_INNER GC_bool GC_try_to_collect_inner(GC_stop_func stop_func);
 GC_EXTERN GC_bool GC_in_thread_creation;
 #endif
 
-GC_EXTERN GC_bool GC_is_initialized; /* GC_init() has been run. */
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_is_initialized; /* GC_init() has been run. */
 
 /* Do n_blocks units of a garbage collection work, if appropriate.      */
 /* A unit is an amount appropriate for HBLKSIZE bytes of allocation.    */
@@ -2609,20 +2609,20 @@ GC_INNER ptr_t GC_os_get_mem(size_t bytes);
 GC_INNER void GC_print_all_errors(void);
 
 /* GC_debug_malloc has been called.     */
-GC_EXTERN GC_bool GC_debugging_started;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_debugging_started;
 
 /* Check that all objects in the heap with debugging info are intact.   */
 /* Add any that are not to GC_smashed list.                             */
-GC_EXTERN void (*GC_check_heap)(void);
+GC_EXTERN MAY_THREAD_LOCAL void (*GC_check_heap)(void);
 
 /* Print GC_smashed list if it is not empty.  Then clear the list.      */
-GC_EXTERN void (*GC_print_all_smashed)(void);
+GC_EXTERN MAY_THREAD_LOCAL void (*GC_print_all_smashed)(void);
 #endif
 
 /* If possible print (using GC_err_printf)      */
 /* a more detailed description (terminated with */
 /* "\n") of the object referred to by p.        */
-GC_EXTERN void (*GC_print_heap_obj)(ptr_t p);
+GC_EXTERN MAY_THREAD_LOCAL void (*GC_print_heap_obj)(ptr_t p);
 
 GC_INNER void GC_default_print_heap_obj_proc(ptr_t p);
 
@@ -2639,7 +2639,7 @@ void GC_print_address_map(void);
 #  ifndef SHORT_DBG_HDRS
 /* Do not immediately deallocate object on free() in the find-leak    */
 /* mode, just mark it as freed (and deallocate it after GC).          */
-GC_EXTERN GC_bool GC_findleak_delay_free;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free;
 #  endif
 #endif /* !NO_FIND_LEAK */
 
@@ -2653,7 +2653,7 @@ GC_EXTERN volatile AO_t GC_have_errors;
     ((GC_bool)AO_load(&GC_have_errors)) /* no barrier */
 
 #else
-GC_EXTERN GC_bool GC_have_errors;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_have_errors;
 #  define GC_SET_HAVE_ERRORS() (void)(GC_have_errors = TRUE)
 
 /* We saw a smashed or leaked object.  Call error printing routine    */
@@ -2666,7 +2666,7 @@ GC_EXTERN GC_bool GC_have_errors;
 #if !defined(NO_CLOCK) || !defined(SMALL_CONFIG)
 /* Value 1 generates basic GC log;            */
 /* VERBOSE generates additional messages.     */
-GC_EXTERN int GC_print_stats;
+GC_EXTERN MAY_THREAD_LOCAL int GC_print_stats;
 #else /* SMALL_CONFIG */
 /* Defined as a macro to aid the compiler to remove the relevant      */
 /* message character strings from the executable (with a particular   */
@@ -2675,7 +2675,7 @@ GC_EXTERN int GC_print_stats;
 #endif
 
 #ifdef KEEP_BACK_PTRS
-GC_EXTERN long GC_backtraces;
+GC_EXTERN MAY_THREAD_LOCAL long GC_backtraces;
 #endif
 
 /* A trivial (linear congruential) pseudo-random numbers generator, */
@@ -2700,7 +2700,7 @@ GC_rand_next(GC_RAND_STATE_T *pseed)
 #endif
 
 #ifdef MAKE_BACK_GRAPH
-GC_EXTERN GC_bool GC_print_back_height;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_print_back_height;
 void GC_print_back_graph_stats(void);
 #endif
 
@@ -2764,7 +2764,7 @@ GC_INNER void GC_unmap_gap(ptr_t start1, size_t bytes1, ptr_t start2,
 /* pthread_at_fork (so if it is missing or failed then    */
 /* abort occurs in GC_init), GC_atfork_prepare and the    */
 /* accompanying routines are no-op in such a case.        */
-GC_EXTERN int GC_handle_fork;
+GC_EXTERN MAY_THREAD_LOCAL int GC_handle_fork;
 
 #  ifdef THREADS
 #    if defined(SOLARIS) && !defined(_STRICT_STDC)
@@ -2785,7 +2785,7 @@ GC_INNER void GC_stackbase_info_update_after_fork(void);
 /* The incremental collection is in the manual VDB    */
 /* mode.  Assumes GC_incremental is true.  Should not */
 /* be modified once GC_incremental is set to true.    */
-GC_EXTERN GC_bool GC_manual_vdb;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_manual_vdb;
 
 #  define GC_auto_incremental (GC_incremental && !GC_manual_vdb)
 GC_INNER void GC_dirty_inner(const void *p); /* does not require locking */
@@ -2798,7 +2798,7 @@ GC_INNER void GC_dirty_inner(const void *p); /* does not require locking */
 #else
 /* Using incremental/generational collection. */
 /* Assumes dirty bits are being maintained.   */
-GC_EXTERN GC_bool GC_incremental;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_incremental;
 
 /* Virtual dirty bit implementation:                  */
 /* Each implementation exports the following:         */
@@ -2969,36 +2969,36 @@ void GC_err_puts(const char *s);
 #define TO_KiB_UL(v) ((unsigned long)(((v) + ((1 << 9) - 1)) >> 10))
 
 /* How many consecutive GC/expansion failures?  Reset by GC_allochblk(). */
-GC_EXTERN unsigned GC_fail_count;
+GC_EXTERN MAY_THREAD_LOCAL unsigned GC_fail_count;
 
 /* Number of reclaimed bytes after garbage collection; protected by the */
 /* allocator lock.                                                      */
-GC_EXTERN GC_signed_word GC_bytes_found;
+GC_EXTERN MAY_THREAD_LOCAL GC_signed_word GC_bytes_found;
 
 #ifndef GC_GET_HEAP_USAGE_NOT_NEEDED
 /* Number of bytes reclaimed before this collection cycle; used for   */
 /* statistics only.                                                   */
-GC_EXTERN word GC_reclaimed_bytes_before_gc;
+GC_EXTERN MAY_THREAD_LOCAL word GC_reclaimed_bytes_before_gc;
 #endif
 
 #ifdef USE_MUNMAP
-GC_EXTERN unsigned GC_unmap_threshold;        /* defined in alloc.c */
-GC_EXTERN GC_bool GC_force_unmap_on_gcollect; /* defined in misc.c */
+GC_EXTERN MAY_THREAD_LOCAL unsigned GC_unmap_threshold;        /* defined in alloc.c */
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_force_unmap_on_gcollect; /* defined in misc.c */
 #endif
 
 #ifdef MSWIN32
-GC_EXTERN GC_bool GC_no_win32_dlls; /* defined in os_dep.c */
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_no_win32_dlls; /* defined in os_dep.c */
 
 /* Is Windows NT derivative?  */
-GC_EXTERN GC_bool GC_wnt;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_wnt;
 #endif
 
 #ifdef THREADS
 #  if (defined(MSWIN32) && !defined(CONSOLE_LOG)) || defined(MSWINCE)
-GC_EXTERN CRITICAL_SECTION GC_write_cs;
+GC_EXTERN MAY_THREAD_LOCAL CRITICAL_SECTION GC_write_cs;
 #    ifdef GC_ASSERTIONS
 /* Note: protected by GC_write_cs.        */
-GC_EXTERN GC_bool GC_write_disabled;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_write_disabled;
 #    endif
 #  endif /* MSWIN32 || MSWINCE */
 #  ifdef NEED_FAULT_HANDLER_LOCK
@@ -3014,15 +3014,15 @@ GC_EXTERN GC_bool GC_write_disabled;
 #    define GC_release_dirty_lock() (void)0
 #  endif
 #  ifdef MSWINCE
-GC_EXTERN GC_bool GC_dont_query_stack_min;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_dont_query_stack_min;
 #  endif
 #elif defined(IA64)
 /* Value returned from register flushing routine (ar.bsp).    */
-GC_EXTERN ptr_t GC_save_regs_ret_val;
+GC_EXTERN MAY_THREAD_LOCAL ptr_t GC_save_regs_ret_val;
 #endif /* !THREADS */
 
 #ifdef THREAD_LOCAL_ALLOC
-GC_EXTERN GC_bool GC_world_stopped; /* defined in alloc.c */
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_world_stopped; /* defined in alloc.c */
 GC_INNER void GC_mark_thread_local_free_lists(void);
 #endif
 
@@ -3252,7 +3252,7 @@ GC_INNER word GC_compute_root_size(void);
 
 #ifndef NO_DEBUGGING
 /* A flag to generate regular debugging dumps.        */
-GC_EXTERN GC_bool GC_dump_regularly;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_dump_regularly;
 #  define COND_DUMP                         \
     if (EXPECT(GC_dump_regularly, FALSE)) { \
       GC_dump_named(NULL);                  \
@@ -3273,7 +3273,7 @@ GC_EXTERN GC_bool GC_dump_regularly;
 #  define GC_markers_m1 GC_parallel
 
 /* A flag to temporarily avoid parallel marking.      */
-GC_EXTERN GC_bool GC_parallel_mark_disabled;
+GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_parallel_mark_disabled;
 
 /* The mark lock and condition variable.  If the allocator lock is    */
 /* also acquired, it must be done first.  The mark lock is used to    */
@@ -3412,7 +3412,7 @@ GC_INNER void GC_set_and_save_fault_handler(GC_fault_handler_t);
 #if defined(NEED_FIND_LIMIT)                                 \
     || (defined(USE_PROC_FOR_LIBRARIES) && defined(THREADS)) \
     || (defined(WRAP_MARK_SOME) && defined(NO_SEH_AVAILABLE))
-GC_EXTERN JMP_BUF GC_jmp_buf;
+GC_EXTERN MAY_THREAD_LOCAL JMP_BUF GC_jmp_buf;
 
 /* Set up a handler for address faults which will longjmp to  */
 /* GC_jmp_buf.                                                */

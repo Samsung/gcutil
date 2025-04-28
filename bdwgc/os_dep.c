@@ -66,9 +66,9 @@ typedef long unsigned int caddr_t;
 #endif
 
 #if !defined(NO_EXECUTE_PERMISSION)
-STATIC GC_bool GC_pages_executable = TRUE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_pages_executable = TRUE;
 #else
-STATIC GC_bool GC_pages_executable = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_pages_executable = FALSE;
 #endif
 
 /* Note: it is undefined later on GC_pages_executable real use. */
@@ -167,8 +167,8 @@ GC_INNER const char *
 GC_get_maps(void)
 {
   ssize_t result;
-  static char *maps_buf = NULL;
-  static size_t maps_buf_sz = 1;
+  static MAY_THREAD_LOCAL char *maps_buf = NULL;
+  static MAY_THREAD_LOCAL size_t maps_buf_sz = 1;
   size_t maps_size;
 #  ifdef THREADS
   size_t old_maps_size = 0;
@@ -461,7 +461,7 @@ extern char **environ;
 EXTERN_C_END
 #  endif
 
-ptr_t GC_data_start = NULL;
+MAY_THREAD_LOCAL ptr_t GC_data_start = NULL;
 
 GC_INNER void
 GC_init_linux_data_start(void)
@@ -522,8 +522,8 @@ GC_init_linux_data_start(void)
 /* compatible with ECOS early releases.  Later releases use a more    */
 /* sophisticated means of allocating memory than this simple static   */
 /* allocator, but this method is at least bound to work.              */
-static char ecos_gc_memory[ECOS_GC_MEMORY_SIZE];
-static ptr_t ecos_gc_brk = ecos_gc_memory;
+static MAY_THREAD_LOCAL char ecos_gc_memory[ECOS_GC_MEMORY_SIZE];
+static MAY_THREAD_LOCAL ptr_t ecos_gc_brk = ecos_gc_memory;
 
 static void *
 tiny_sbrk(ptrdiff_t increment)
@@ -557,8 +557,8 @@ __asan_default_options(void)
 #endif
 
 #ifdef OPENBSD
-static struct sigaction old_segv_act;
-STATIC JMP_BUF GC_jmp_buf_openbsd;
+static MAY_THREAD_LOCAL struct sigaction old_segv_act;
+STATIC MAY_THREAD_LOCAL JMP_BUF GC_jmp_buf_openbsd;
 
 STATIC void
 GC_fault_handler_openbsd(int sig)
@@ -567,13 +567,13 @@ GC_fault_handler_openbsd(int sig)
   LONGJMP(GC_jmp_buf_openbsd, 1);
 }
 
-static volatile int firstpass;
+static MAY_THREAD_LOCAL volatile int firstpass;
 
 /* Return first addressable location > p or bound.    */
 STATIC ptr_t
 GC_skip_hole_openbsd(ptr_t p, ptr_t bound)
 {
-  static volatile ptr_t result;
+  static MAY_THREAD_LOCAL volatile ptr_t result;
   struct sigaction act;
   size_t pgsz;
 
@@ -692,13 +692,13 @@ struct o32_obj {
 #endif /* OS2 */
 
 /* Find the page size.  */
-GC_INNER size_t GC_page_size = 0;
+GC_INNER MAY_THREAD_LOCAL size_t GC_page_size = 0;
 #ifdef REAL_PAGESIZE_NEEDED
-GC_INNER size_t GC_real_page_size = 0;
+GC_INNER MAY_THREAD_LOCAL size_t GC_real_page_size = 0;
 #endif
 
 #ifdef SOFT_VDB
-STATIC unsigned GC_log_pagesize = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_log_pagesize = 0;
 #endif
 
 #ifdef ANY_MSWIN
@@ -711,7 +711,7 @@ STATIC unsigned GC_log_pagesize = 0;
 GC_INNER GC_bool GC_dont_query_stack_min = FALSE;
 #  endif
 
-GC_INNER SYSTEM_INFO GC_sysinfo;
+GC_INNER MAY_THREAD_LOCAL SYSTEM_INFO GC_sysinfo;
 
 #  ifndef CYGWIN32
 #    define is_writable(prot)                               \
@@ -941,15 +941,15 @@ GC_get_stack_base(struct GC_stack_base *sb)
 
 #  ifdef USE_SEGV_SIGACT
 #    ifndef OPENBSD
-static struct sigaction old_segv_act;
+static MAY_THREAD_LOCAL struct sigaction old_segv_act;
 #    endif
 #    ifdef USE_BUS_SIGACT
-static struct sigaction old_bus_act;
+static MAY_THREAD_LOCAL struct sigaction old_bus_act;
 #    endif
 #  else
-static GC_fault_handler_t old_segv_hand;
+static MAY_THREAD_LOCAL GC_fault_handler_t old_segv_hand;
 #    ifdef HAVE_SIGBUS
-static GC_fault_handler_t old_bus_hand;
+static MAY_THREAD_LOCAL GC_fault_handler_t old_bus_hand;
 #    endif
 #  endif /* !USE_SEGV_SIGACT */
 
@@ -998,7 +998,7 @@ GC_set_and_save_fault_handler(GC_fault_handler_t h)
 #if defined(NEED_FIND_LIMIT)                                 \
     || (defined(USE_PROC_FOR_LIBRARIES) && defined(THREADS)) \
     || (defined(WRAP_MARK_SOME) && defined(NO_SEH_AVAILABLE))
-GC_INNER JMP_BUF GC_jmp_buf;
+GC_INNER MAY_THREAD_LOCAL JMP_BUF GC_jmp_buf;
 
 STATIC void
 GC_fault_handler(int sig)
@@ -1047,7 +1047,7 @@ GC_find_limit_with_bound(ptr_t p, GC_bool up, ptr_t bound)
   /* This is safer if static, since otherwise it may not be       */
   /* preserved across the longjmp.  Can safely be static since it */
   /* is only called with the allocator lock held.                 */
-  static volatile ptr_t result;
+  static MAY_THREAD_LOCAL volatile ptr_t result;
 
   GC_ASSERT(up ? ADDR(bound) >= MIN_PAGE_SIZE
                : ADDR(bound) <= ~(word)MIN_PAGE_SIZE);
@@ -1549,8 +1549,8 @@ GC_get_stack_base(struct GC_stack_base *sb)
 /* thread - see JDK bug #4352906).                                    */
 /* Note: stackbase_main_self set to zero means stackbase_main_ss_sp   */
 /* value is unset.                                                    */
-static pthread_t stackbase_main_self = 0;
-static void *stackbase_main_ss_sp = NULL;
+static MAY_THREAD_LOCAL pthread_t stackbase_main_self = 0;
+static MAY_THREAD_LOCAL void *stackbase_main_ss_sp = NULL;
 
 #  ifdef CAN_HANDLE_FORK
 GC_INNER void
@@ -1697,8 +1697,8 @@ GC_get_main_stack_base(void)
 typedef UINT(WINAPI *GetWriteWatch_type)(DWORD, PVOID,
                                          GC_ULONG_PTR /* SIZE_T */, PVOID *,
                                          GC_ULONG_PTR *, PULONG);
-static FARPROC GetWriteWatch_func;
-static DWORD GetWriteWatch_alloc_flag;
+static MAY_THREAD_LOCAL FARPROC GetWriteWatch_func;
+static MAY_THREAD_LOCAL DWORD GetWriteWatch_alloc_flag;
 
 #    define GC_GWW_AVAILABLE() (GetWriteWatch_func != 0)
 
@@ -1794,10 +1794,10 @@ detect_GetWriteWatch(void)
 /* the data segments associated with dll's.  We register the main   */
 /* data segment here.                                               */
 
-GC_INNER GC_bool GC_no_win32_dlls = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_no_win32_dlls = FALSE;
 
 /* This is a Windows NT derivative, i.e. NT, Win2K, XP or later.    */
-GC_INNER GC_bool GC_wnt = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_wnt = FALSE;
 
 GC_INNER void
 GC_init_win32(void)
@@ -1903,7 +1903,7 @@ GC_register_root_section(ptr_t static_root)
 /* But that apparently works only for NT-based Windows.       */
 
 /* Note: initialized to approximate largest root size.        */
-STATIC size_t GC_max_root_size = 100000;
+STATIC MAY_THREAD_LOCAL size_t GC_max_root_size = 100000;
 
 /* In the long run, a better data structure would also be nice... */
 STATIC struct GC_malloc_heap_list {
@@ -2341,10 +2341,10 @@ STATIC void *
 GC_unix_mmap_get_mem(size_t bytes)
 {
   void *result;
-  static ptr_t last_addr = (ptr_t)HEAP_START;
+  static MAY_THREAD_LOCAL ptr_t last_addr = (ptr_t)HEAP_START;
 
 #      ifndef USE_MMAP_ANON
-  static GC_bool initialized = FALSE;
+  static MAY_THREAD_LOCAL GC_bool initialized = FALSE;
 
   if (!EXPECT(initialized, TRUE)) {
 #        ifdef SYMBIAN
@@ -2502,7 +2502,7 @@ GC_unix_get_mem(size_t bytes)
 {
 #    if defined(MMAP_SUPPORTED)
   /* By default, we try both sbrk and mmap, in that order.    */
-  static GC_bool sbrk_failed = FALSE;
+  static MAY_THREAD_LOCAL GC_bool sbrk_failed = FALSE;
   void *result = NULL;
 
   if (GC_pages_executable) {
@@ -3047,7 +3047,8 @@ GC_default_push_other_roots(void)
 
 #endif /* THREADS */
 
-GC_push_other_roots_proc GC_push_other_roots = GC_default_push_other_roots;
+MAY_THREAD_LOCAL GC_push_other_roots_proc GC_push_other_roots
+    = GC_default_push_other_roots;
 
 GC_API void GC_CALL
 GC_set_push_other_roots(GC_push_other_roots_proc fn)
@@ -3154,7 +3155,7 @@ GC_or_pages(page_hash_table pht1, const word *pht2)
 #  define GC_GWW_BUF_LEN (MAXHINCR * HBLKSIZE / 4096 /* x86 page size */)
 /* Still susceptible to overflow, if there are very large allocations, */
 /* and everything is dirty.                                            */
-static PVOID gww_buf[GC_GWW_BUF_LEN];
+static MAY_THREAD_LOCAL PVOID gww_buf[GC_GWW_BUF_LEN];
 
 #  ifndef MPROTECT_VDB
 #    define GC_gww_dirty_init GC_dirty_init
@@ -3203,9 +3204,9 @@ GC_gww_read_dirty(GC_bool output_unneeded)
               WRITE_WATCH_FLAG_RESET, GC_heap_sects[i].hs_start,
               GC_heap_sects[i].hs_bytes, pages, &count, &page_size)
           != 0) {
-        static int warn_count = 0;
+        static MAY_THREAD_LOCAL int warn_count = 0;
         struct hblk *start = (struct hblk *)GC_heap_sects[i].hs_start;
-        static const struct hblk *last_warned = NULL;
+        static MAY_THREAD_LOCAL const struct hblk *last_warned = NULL;
         size_t nblocks = divHBLKSZ(GC_heap_sects[i].hs_bytes);
 
         if (i != 0 && last_warned != start && warn_count++ < 5) {
@@ -3251,7 +3252,7 @@ GC_gww_read_dirty(GC_bool output_unneeded)
 }
 
 #elif defined(SOFT_VDB)
-static int clear_refs_fd = -1;
+static MAY_THREAD_LOCAL int clear_refs_fd = -1;
 #  define GC_GWW_AVAILABLE() (clear_refs_fd != -1)
 #else
 #  define GC_GWW_AVAILABLE() FALSE
@@ -3315,7 +3316,7 @@ async_set_pht_entry_from_index(volatile page_hash_table db, size_t index)
 /* seems to decrease the likelihood of some of the problems         */
 /* described below.                                                 */
 #    include <mach/vm_map.h>
-STATIC mach_port_t GC_task_self = 0;
+STATIC MAY_THREAD_LOCAL mach_port_t GC_task_self = 0;
 #    define PROTECT_INNER(addr, len, allow_write, C_msg_prefix)            \
       if (vm_protect(GC_task_self, (vm_address_t)(addr), (vm_size_t)(len), \
                      FALSE,                                                \
@@ -3344,7 +3345,7 @@ STATIC mach_port_t GC_task_self = 0;
 #    undef IGNORE_PAGES_EXECUTABLE
 
 #  else /* USE_WINALLOC */
-static DWORD protect_junk;
+static MAY_THREAD_LOCAL DWORD protect_junk;
 #    define PROTECT_INNER(addr, len, allow_write, C_msg_prefix)             \
       if (VirtualProtect(addr, len,                                         \
                          GC_pages_executable                                \
@@ -3380,13 +3381,13 @@ typedef void (*PLAIN_HNDLR_PTR)(int);
 
 #  ifndef DARWIN
 /* Also old MSWIN32 ACCESS_VIOLATION filter.  */
-STATIC SIG_HNDLR_PTR GC_old_segv_handler = 0;
+STATIC MAY_THREAD_LOCAL SIG_HNDLR_PTR GC_old_segv_handler = 0;
 #    ifdef USE_BUS_SIGACT
-STATIC SIG_HNDLR_PTR GC_old_bus_handler = 0;
-STATIC GC_bool GC_old_bus_handler_used_si = FALSE;
+STATIC MAY_THREAD_LOCAL SIG_HNDLR_PTR GC_old_bus_handler = 0;
+STATIC MAY_THREAD_LOCAL GC_bool GC_old_bus_handler_used_si = FALSE;
 #    endif
 #    if !defined(MSWIN32) && !defined(MSWINCE)
-STATIC GC_bool GC_old_segv_handler_used_si = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_old_segv_handler_used_si = FALSE;
 #    endif
 #  endif /* !DARWIN */
 
@@ -3823,7 +3824,8 @@ GC_handle_protected_regions_limit(void)
 #endif /* MPROTECT_VDB */
 
 #if !defined(THREADS) && (defined(PROC_VDB) || defined(SOFT_VDB))
-static pid_t saved_proc_pid; /* pid used to compose /proc file names */
+static MAY_THREAD_LOCAL pid_t
+    saved_proc_pid; /* pid used to compose /proc file names */
 #endif
 
 #ifdef PROC_VDB
@@ -3860,9 +3862,9 @@ struct prasmap {
 #  endif
 
 #  define INITIAL_BUF_SZ 8192
-STATIC size_t GC_proc_buf_size = INITIAL_BUF_SZ;
-STATIC char *GC_proc_buf = NULL;
-STATIC int GC_proc_fd = -1;
+STATIC MAY_THREAD_LOCAL size_t GC_proc_buf_size = INITIAL_BUF_SZ;
+STATIC MAY_THREAD_LOCAL char *GC_proc_buf = NULL;
+STATIC MAY_THREAD_LOCAL int GC_proc_fd = -1;
 
 static GC_bool
 proc_dirty_open_files(void)
@@ -4071,8 +4073,8 @@ open_proc_fd(pid_t pid, const char *slash_filename, int mode)
 
 typedef uint64_t pagemap_elem_t;
 
-static pagemap_elem_t *soft_vdb_buf;
-static int pagemap_fd;
+static MAY_THREAD_LOCAL pagemap_elem_t *soft_vdb_buf;
+static MAY_THREAD_LOCAL int pagemap_fd;
 
 static GC_bool
 soft_dirty_open_files(void)
@@ -4234,9 +4236,10 @@ GC_dirty_init(void)
   return TRUE;
 }
 
-static off_t pagemap_buf_fpos; /* valid only if pagemap_buf_len > 0 */
+static MAY_THREAD_LOCAL off_t
+    pagemap_buf_fpos; /* valid only if pagemap_buf_len > 0 */
 
-static size_t pagemap_buf_len;
+static MAY_THREAD_LOCAL size_t pagemap_buf_len;
 
 /* Read bytes from /proc/self/pagemap at given file position.         */
 /* len - the maximum number of bytes to read; (*pres) - amount of     */
@@ -4454,7 +4457,7 @@ GC_soft_read_dirty(GC_bool output_unneeded)
 #endif /* SOFT_VDB */
 
 #ifndef NO_MANUAL_VDB
-GC_INNER GC_bool GC_manual_vdb = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_manual_vdb = FALSE;
 
 /* Manually mark the page containing p as dirty.  Logically, this     */
 /* dirties the entire object.                                         */
@@ -4777,7 +4780,7 @@ typedef enum {
 /* This value is only used on the reply port. */
 #    define ID_ACK 3
 
-STATIC GC_mprotect_state_t GC_mprotect_state = GC_MP_NORMAL;
+STATIC MAY_THREAD_LOCAL GC_mprotect_state_t GC_mprotect_state = GC_MP_NORMAL;
 
 /* The following should ONLY be called when the world is stopped.     */
 STATIC void
@@ -4980,7 +4983,7 @@ GC_mprotect_thread(void *arg)
 
 /* Updates to this aren't atomic, but the SIGBUS'es seem pretty rare.    */
 /* Even if this doesn't get updated property, it isn't really a problem. */
-STATIC int GC_sigbus_count = 0;
+STATIC MAY_THREAD_LOCAL int GC_sigbus_count = 0;
 
 STATIC void
 GC_darwin_sigbus(int num, siginfo_t *sip, void *context)
@@ -5250,8 +5253,8 @@ catch_exception_raise(mach_port_t exception_port, mach_port_t thread,
     /* If a "real" fault ever occurs it'll just keep faulting over and  */
     /* over and we'll hit the limit pretty quickly.                     */
 #  ifdef BROKEN_EXCEPTION_HANDLING
-    static const char *last_fault;
-    static int last_fault_count;
+    static MAY_THREAD_LOCAL const char *last_fault;
+    static MAY_THREAD_LOCAL int last_fault_count;
 
     if (addr != last_fault) {
       last_fault = addr;
@@ -5469,7 +5472,7 @@ EXTERN_C_END
 #      ifdef REDIRECT_MALLOC
 /* Deal with possible malloc calls in backtrace by omitting */
 /* the infinitely recursing backtrace.                      */
-STATIC GC_bool GC_in_save_callers = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_in_save_callers = FALSE;
 
 #        if defined(THREADS) && defined(DBG_HDRS_ALL)
 #          include "private/dbg_mlc.h"
@@ -5590,7 +5593,7 @@ GC_print_callers(struct callinfo info[NFRAMES])
 {
   int i, reent_cnt;
 #  if defined(AO_HAVE_fetch_and_add1) && defined(AO_HAVE_fetch_and_sub1)
-  static volatile AO_t reentry_count = 0;
+  static MAY_THREAD_LOCAL volatile AO_t reentry_count = 0;
 
   /* Note: alternatively, if available, we may use a thread-local   */
   /* storage, thus, enabling concurrent usage of GC_print_callers;  */
@@ -5599,7 +5602,7 @@ GC_print_callers(struct callinfo info[NFRAMES])
   GC_ASSERT(I_DONT_HOLD_LOCK());
   reent_cnt = (int)(GC_signed_word)AO_fetch_and_add1(&reentry_count);
 #  else
-  static int reentry_count = 0;
+  static MAY_THREAD_LOCAL int reentry_count = 0;
 
   /* Note: this could use a different lock. */
   LOCK();
@@ -5661,17 +5664,17 @@ GC_print_callers(struct callinfo info[NFRAMES])
       do {
         FILE *pipe;
 #    define EXE_SZ 100
-        static char exe_name[EXE_SZ];
+        static MAY_THREAD_LOCAL char exe_name[EXE_SZ];
 #    define CMD_SZ 200
         char cmd_buf[CMD_SZ];
 #    define RESULT_SZ 200
-        static char result_buf[RESULT_SZ];
+        static MAY_THREAD_LOCAL char result_buf[RESULT_SZ];
         size_t result_len;
         const char *old_preload;
 #    define PRELOAD_SZ 200
         char preload_buf[PRELOAD_SZ];
-        static GC_bool found_exe_name = FALSE;
-        static GC_bool will_fail = FALSE;
+        static MAY_THREAD_LOCAL GC_bool found_exe_name = FALSE;
+        static MAY_THREAD_LOCAL GC_bool will_fail = FALSE;
 
         /* Try to get it via a hairy and expensive scheme.      */
         /* First we get the name of the executable:             */

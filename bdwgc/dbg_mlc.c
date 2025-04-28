@@ -31,7 +31,7 @@
 static int
 GC_rand(void)
 {
-  static GC_RAND_STATE_T seed;
+  static MAY_THREAD_LOCAL GC_RAND_STATE_T seed;
 
   return GC_RAND_NEXT(&seed);
 }
@@ -317,7 +317,8 @@ GC_check_annotated_obj(oh *ohdr)
 }
 #endif /* !SHORT_DBG_HDRS */
 
-STATIC GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS] = { 0 };
+STATIC MAY_THREAD_LOCAL GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS]
+    = { 0 };
 
 GC_API void GC_CALL
 GC_register_describe_type_fn(int k, GC_describe_type_fn fn)
@@ -425,7 +426,7 @@ do_nothing(void)
 #endif /* SHORT_DBG_HDRS */
 
 #if defined(NO_FIND_LEAK) && defined(SHORT_DBG_HDRS)
-static GC_bool debugging_initialized = FALSE;
+static MAY_THREAD_LOCAL GC_bool debugging_initialized = FALSE;
 #else
 #  define debugging_initialized GC_debugging_started
 #endif
@@ -472,7 +473,7 @@ store_debug_info(void *base, size_t lb, const char *fn, GC_EXTRA_PARAMS)
   return result;
 }
 
-const size_t GC_debug_header_size = sizeof(oh);
+MAY_THREAD_LOCAL const size_t GC_debug_header_size = sizeof(oh);
 
 GC_API size_t GC_CALL
 GC_get_debug_header_size(void)
