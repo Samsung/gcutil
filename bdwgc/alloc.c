@@ -1944,8 +1944,12 @@ GC_allocobj(size_t lg, int k)
   while (NULL == *flh) {
     /* Only a few iterations are expected at most, otherwise    */
     /* something is wrong in one of the functions called below. */
+
+#if 0 // disable warning
     if (retry_cnt > MAX_ALLOCOBJ_RETRIES)
       ABORT("Too many retries in GC_allocobj");
+#endif
+
 #ifndef GC_DISABLE_INCREMENTAL
     if (GC_incremental && GC_time_limit != GC_TIME_UNLIMITED && !GC_dont_gc) {
       /* True incremental mode, not just generational.      */
