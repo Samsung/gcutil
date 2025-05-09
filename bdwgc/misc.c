@@ -129,12 +129,6 @@ GC_INNER MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free = FALSE;
 #  endif
 #endif /* !NO_FIND_LEAK && !SHORT_DBG_HDRS */
 
-#ifdef ALL_INTERIOR_POINTERS
-MAY_THREAD_LOCAL int GC_all_interior_pointers = 1;
-#else
-MAY_THREAD_LOCAL int GC_all_interior_pointers = 0;
-#endif
-
 #ifdef FINALIZE_ON_DEMAND
 MAY_THREAD_LOCAL int GC_finalize_on_demand = 1;
 #else
@@ -1261,9 +1255,6 @@ GC_init(void)
   }
 #  endif
 #endif
-  if (GETENV("GC_ALL_INTERIOR_POINTERS") != NULL) {
-    GC_all_interior_pointers = 1;
-  }
   if (GETENV("GC_DONT_GC") != NULL) {
 #if defined(LINT2) \
     && !(defined(GC_ASSERTIONS) && defined(GC_ALWAYS_MULTITHREADED))
@@ -2845,20 +2836,7 @@ GC_get_find_leak(void)
 GC_API void GC_CALL
 GC_set_all_interior_pointers(int value)
 {
-  GC_all_interior_pointers = value ? 1 : 0;
-  if (GC_is_initialized) {
-    /* It is not recommended to change GC_all_interior_pointers value */
-    /* after GC is initialized but it seems GC could work correctly   */
-    /* even after switching the mode.                                 */
-    LOCK();
-    /* Note: this resets manual offsets as well.      */
-    GC_initialize_offsets();
-#ifndef NO_BLACK_LISTING
-    if (!GC_all_interior_pointers)
-      GC_bl_init_no_interiors();
-#endif
-    UNLOCK();
-  }
+  ABORT("interior pointer mode is unsupported");
 }
 
 GC_API int GC_CALL

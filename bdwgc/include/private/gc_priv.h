@@ -414,6 +414,9 @@ EXTERN_C_END
 /* keep individual objects small.  This is really controlled at   */
 /* startup, through GC_all_interior_pointers.                     */
 #endif
+#ifndef GC_all_interior_pointers
+#define GC_all_interior_pointers 0
+#endif
 
 EXTERN_C_BEGIN
 
