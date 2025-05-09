@@ -119,7 +119,11 @@ GC_is_valid_displacement(void *p)
   sz = hhdr->hb_sz;
   offset = HBLKDISPL(p) % sz;
   if ((sz > MAXOBJBYTES && ADDR_GE((ptr_t)p, (ptr_t)h + sz))
+#ifdef NO_DEBUGGING
+      || offset
+#else
       || !GC_valid_offsets[offset]
+#endif
       || (ADDR_LT((ptr_t)(h + 1), (ptr_t)p + sz - offset)
           && !IS_FORWARDING_ADDR_OR_NIL(HDR(h + 1)))) {
     GC_is_valid_displacement_print_proc((ptr_t)p);

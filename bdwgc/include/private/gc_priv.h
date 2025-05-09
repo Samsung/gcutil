@@ -1635,9 +1635,10 @@ struct _GC_arrays {
   /* number of these, which can be referenced by DS_PROC mark       */
   /* descriptors.  See gc_mark.h.                                   */
   GC_mark_proc _mark_procs[GC_MAX_MARK_PROCS];
-
+#ifndef NO_DEBUGGING
   /* GC_valid_offsets[i] ==> GC_modws_valid_offsets[i%sizeof(ptr_t)].   */
   char _modws_valid_offsets[sizeof(ptr_t)];
+#endif
 #ifndef ANY_MSWIN
   /* The hash table header.  Used only to check whether a range   */
   /* is already present.                                          */
@@ -1690,7 +1691,9 @@ struct _GC_arrays {
 #endif
 #define VALID_OFFSET_SZ HBLKSIZE
   /* GC_valid_offsets[i] is true means i is registered as a displacement. */
+#ifndef NO_DEBUGGING
   char _valid_offsets[VALID_OFFSET_SZ];
+#endif
 #ifndef GC_DISABLE_INCREMENTAL
   /* Pages that were dirty at last GC_read_dirty() call.      */
 #  define GC_grungy_pages GC_arrays._grungy_pages
