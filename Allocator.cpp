@@ -22,6 +22,7 @@
 
 #include <vector>
 #include <algorithm>
+#include <cstdio>
 
 #ifdef ESCARGOT_MEM_STATS
 #include <cstring>
