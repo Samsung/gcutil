@@ -35,6 +35,11 @@ GC_register_displacement(size_t offset)
 GC_INNER void
 GC_register_displacement_inner(size_t offset)
 {
+#ifdef NO_DEBUGGING
+  if (offset) {
+    ABORT("Bad argument to GC_register_displacement");
+  }
+#else
   GC_ASSERT(I_HOLD_LOCK());
   if (offset >= VALID_OFFSET_SZ) {
     ABORT("Bad argument to GC_register_displacement");
@@ -43,6 +48,7 @@ GC_register_displacement_inner(size_t offset)
     GC_valid_offsets[offset] = TRUE;
     GC_modws_valid_offsets[offset % sizeof(ptr_t)] = TRUE;
   }
+#endif
 }
 
 #ifndef MARK_BIT_PER_OBJ
@@ -91,7 +97,7 @@ GC_INNER void
 GC_initialize_offsets(void)
 {
   size_t i;
-
+#ifndef NO_DEBUGGING
   if (GC_all_interior_pointers) {
     for (i = 0; i < VALID_OFFSET_SZ; ++i)
       GC_valid_offsets[i] = TRUE;
@@ -100,4 +106,5 @@ GC_initialize_offsets(void)
     for (i = 0; i < sizeof(ptr_t); ++i)
       GC_modws_valid_offsets[i] = FALSE;
   }
+#endif
 }

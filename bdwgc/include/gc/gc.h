@@ -202,7 +202,6 @@ GC_API int GC_CALL GC_get_find_leak(void);
 /* "off the end" pointer recognition (but the size is not increased     */
 /* for uncollectible objects as well as for ignore-off-page objects of  */
 /* at least heap block size).                                           */
-GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED int GC_all_interior_pointers;
 GC_API void GC_CALL GC_set_all_interior_pointers(int);
 GC_API int GC_CALL GC_get_all_interior_pointers(void);
 

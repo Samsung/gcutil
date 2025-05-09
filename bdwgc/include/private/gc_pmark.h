@@ -243,7 +243,13 @@ GC_push_contents_hdr(ptr_t current, mse *mark_stack_top, mse *mark_stack_limit,
           GC_ASSERT(obj_displ < hhdr->hb_sz);
           /* Must be in all_interior_pointer case, not first block      */
           /* already did validity check on cache miss.                  */
-        } else if (do_offset_check && !GC_valid_offsets[obj_displ]) {
+        } else if (do_offset_check
+#ifdef NO_DEBUGGING
+            && obj_displ
+#else
+            && !GC_valid_offsets[obj_displ]
+#endif
+                                 ) {
           GC_ADD_TO_BLACK_LIST_NORMAL(current, source);
           break;
         }
@@ -269,7 +275,13 @@ GC_push_contents_hdr(ptr_t current, mse *mark_stack_top, mse *mark_stack_limit,
           obj_displ = GRANULES_TO_BYTES(gran_offset) + byte_offset;
 #endif
 
-          if (do_offset_check && !GC_valid_offsets[obj_displ]) {
+          if (do_offset_check
+#ifdef NO_DEBUGGING
+            && obj_displ
+#else
+            && !GC_valid_offsets[obj_displ]
+#endif
+              ) {
             GC_ADD_TO_BLACK_LIST_NORMAL(current, source);
             break;
           }

@@ -193,7 +193,11 @@ GC_add_to_black_list_normal(ptr_t p)
 #  ifndef PARALLEL_MARK
   GC_ASSERT(I_HOLD_LOCK());
 #  endif
+#  ifdef NO_DEBUGGING
+  if ((ADDR(p) & (sizeof(ptr_t) - 1)) == 0) {
+#  else
   if (GC_modws_valid_offsets[ADDR(p) & (sizeof(ptr_t) - 1)]) {
+#  endif
     size_t index = PHT_HASH(p);
 
     if (NULL == HDR(p) || get_pht_entry_from_index(GC_old_normal_bl, index)) {
