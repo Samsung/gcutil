@@ -468,10 +468,12 @@ GC_init_linux_data_start(void)
 {
   ptr_t data_end = DATAEND;
 
-#  if defined(HOST_TIZEN) || defined(HOST_ANDROID)
-  GC_data_start = DATAEND;
-  return;
-#  endif
+  if (GC_no_dls) {
+    /* Not needed, avoids the SIGSEGV caused by       */
+    /* GC_find_limit which complicates debugging.     */
+    GC_data_start = data_end; /* set data root size to 0 */
+    return;
+  }
 
 #  if (defined(LINUX) || defined(HURD)) && defined(USE_PROG_DATA_START)
   /* Try the easy approaches first: */
@@ -494,13 +496,6 @@ GC_init_linux_data_start(void)
   GC_log_printf("__data_start not provided\n");
 #    endif
 #  endif /* LINUX */
-
-  if (GC_no_dls) {
-    /* Not needed, avoids the SIGSEGV caused by       */
-    /* GC_find_limit which complicates debugging.     */
-    GC_data_start = data_end; /* set data root size to 0 */
-    return;
-  }
 
 #  ifdef NETBSD
   /* This may need to be environ, without the underscore, for       */
