@@ -1745,9 +1745,19 @@ struct _GC_arrays {
   /* and each entry points to a hash chain.  The last entry in each */
   /* chain is GC_all_nils.                                          */
   bottom_index *_top_index[TOP_SZ];
+
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+  GC_signed_word GC_bytes_found;
+#endif
 };
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+GC_EXTERN word GC_tls_gc_array_offset;
+GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
+#define GC_arrays (*(((struct _GC_arrays*)(GC_tls_base_address() + GC_tls_gc_array_offset))))
+#else
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
+#endif
 
 #define GC_all_nils GC_arrays._all_nils
 #define GC_atomic_in_use GC_arrays._atomic_in_use
@@ -1779,8 +1789,13 @@ GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 #define GC_uobjfreelist GC_arrays._uobjfreelist
 #define GC_valid_offsets GC_arrays._valid_offsets
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#define beginGC_arrays ((ptr_t)(&GC_arrays_instance))
+#define endGC_arrays (beginGC_arrays + sizeof(GC_arrays_instance))
+#else
 #define beginGC_arrays ((ptr_t)(&GC_arrays))
 #define endGC_arrays (beginGC_arrays + sizeof(GC_arrays))
+#endif
 
 /* Object kinds: */
 #ifndef MAXOBJKINDS
@@ -1831,10 +1846,23 @@ GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
 #else
 #  define OK_DISCLAIM_INITZ /* empty */
 #endif
-} GC_obj_kinds[MAXOBJKINDS];
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+} GC_obj_kinds_instance[MAXOBJKINDS];
+#else
+} GC_obj_kinds[MAXOBJKINDS];
+#endif
+
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+GC_EXTERN word GC_tls_gc_obj_kinds_offset;
+#define GC_obj_kinds (((struct obj_kind*)(GC_tls_base_address() + GC_tls_gc_obj_kinds_offset)))
+
+#define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds_instance[0]))
+#define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds_instance))
+#else
 #define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds[0]))
 #define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds))
+#endif
 
 /* Variables that used to be in GC_arrays, but need to be accessed by   */
 /* inline allocation code.  If they were in GC_arrays, the inlined      */
@@ -2984,7 +3012,11 @@ GC_EXTERN MAY_THREAD_LOCAL unsigned GC_fail_count;
 
 /* Number of reclaimed bytes after garbage collection; protected by the */
 /* allocator lock.                                                      */
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#define GC_bytes_found GC_arrays.GC_bytes_found
+#else
 GC_EXTERN MAY_THREAD_LOCAL GC_signed_word GC_bytes_found;
+#endif
 
 #ifndef GC_GET_HEAP_USAGE_NOT_NEEDED
 /* Number of bytes reclaimed before this collection cycle; used for   */

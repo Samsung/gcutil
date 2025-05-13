@@ -67,7 +67,12 @@ GC_INNER MAY_THREAD_LOCAL pthread_mutex_t GC_allocate_ml;
 __thread unsigned char GC_cancel_disable_count = 0;
 #endif
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+word GC_tls_gc_array_offset;
+MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance /* = { 0 } */;
+#else
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* = { 0 } */;
+#endif
 
 GC_INNER MAY_THREAD_LOCAL unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
 
@@ -1062,6 +1067,27 @@ GC_init(void)
     if (init_started)
       ABORT("Redirected malloc() called during GC init");
     init_started = TRUE;
+  }
+#endif
+
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+  char *tls_base = GC_tls_base_address();
+  word tls_distance = (char *)&GC_arrays_instance - tls_base;
+  if (GC_tls_gc_array_offset) {
+    if (tls_distance != GC_tls_gc_array_offset) {
+      ABORT("there is a error calc tls offset");
+    }
+  } else {
+    GC_tls_gc_array_offset = tls_distance;
+  }
+
+  tls_distance = (char *)&GC_obj_kinds_instance - tls_base;
+  if (GC_tls_gc_obj_kinds_offset) {
+    if (tls_distance != GC_tls_gc_obj_kinds_offset) {
+      ABORT("there is a error calc tls offset");
+    }
+  } else {
+    GC_tls_gc_obj_kinds_offset = tls_distance;
   }
 #endif
 

@@ -26,7 +26,11 @@
 
 /* Number of bytes of memory reclaimed minus the number of bytes        */
 /* originally on free lists which we had to drop.                       */
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#  define GC_bytes_found GC_arrays.GC_bytes_found
+#else
 GC_INNER MAY_THREAD_LOCAL GC_signed_word GC_bytes_found = 0;
+#endif
 
 #if defined(PARALLEL_MARK)
 /* Number of threads currently building free lists without holding    */
