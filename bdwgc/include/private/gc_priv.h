@@ -2665,7 +2665,12 @@ GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_have_errors;
 /* We saw a smashed or leaked object.  Call error printing routine    */
 /* occasionally.  It is OK to read it not acquiring the allocator     */
 /* lock.  If set to true, it is never cleared.                        */
+#if defined(NO_DEBUGGING)
+#  define get_have_errors() FALSE
+#else
 #  define get_have_errors() GC_have_errors
+#endif
+
 #endif /* !AO_HAVE_store */
 
 #define VERBOSE 2
