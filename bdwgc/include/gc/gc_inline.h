@@ -238,7 +238,7 @@ GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void *GC_CALL
 /* compiled without NO_DEBUGGING.                                       */
 GC_API void GC_CALL GC_print_free_list(int /* k */, size_t /* lg */);
 
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
 GC_INLINE char* GC_tls_base_address()
 {
 #if defined(X86_64)
@@ -247,10 +247,20 @@ GC_INLINE char* GC_tls_base_address()
   return fs;
 #elif defined(I386)
   char* gs;
-  asm inline("mov %%gs:0, %0" : "=r" (gs));
+  asm inline("movl %%gs:0, %0" : "=r" (gs));
   return gs;
-#elif defined(ARM32) || defined(AARCH64)
-  return (char*)(__builtin_thread_pointer());
+#elif defined(ARM32)
+  char* result;
+  asm inline("mrc p15, 0, %0, c13, c0, 3" : "=r"(result));
+  return result;
+#elif defined(AARCH64)
+  char* result;
+  asm inline("mrs %0, tpidr_el0" : "=r"(result));
+  return result;
+#elif defined(RISCV)
+  char* result;
+  asm inline("mv %0, tp" : "=r"(result));
+  return result;
 #else
 #error "unsupported arch"
 #endif

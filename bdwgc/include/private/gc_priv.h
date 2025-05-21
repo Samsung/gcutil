@@ -903,6 +903,10 @@ EXTERN_C_END
 #  include <pthread.h> /* for pthread_t */
 #endif
 
+#if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+#  include <pthread.h>
+#endif
+
 #if __STDC_VERSION__ >= 201112L
 #  include <assert.h> /* for static_assert */
 #endif
@@ -1359,6 +1363,67 @@ struct HeapSect {
   size_t hs_bytes;
 };
 
+/* Object kinds: */
+#ifndef MAXOBJKINDS
+#  ifdef GC_DEBUG
+#    define MAXOBJKINDS 32
+#  else
+#    ifdef SMALL_CONFIG
+#      define MAXOBJKINDS 16
+#    else
+#      define MAXOBJKINDS 24
+#    endif
+#  endif
+#endif /* !MAXOBJKINDS */
+GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
+  /* Array of free-list headers for this kind of object.  Point either  */
+  /* to GC_arrays or to storage allocated with GC_scratch_alloc.        */
+  void **ok_freelist;
+
+  /* List headers for lists of blocks waiting to be swept.  Indexed by  */
+  /* object size in granules.                                           */
+  struct hblk **ok_reclaim_list;
+
+  /* Descriptor template for objects in this block.     */
+  word ok_descriptor;
+
+  /* Add object size in bytes to descriptor template to obtain          */
+  /* descriptor.  Otherwise the template is used as is.                 */
+  GC_bool ok_relocate_descr;
+
+  /* Clear objects before putting them on the free list.        */
+  GC_bool ok_init;
+
+  GC_bool ok_eager_sweep;
+                       /* Sweep unmarked object immediately. See comments   */
+                       /* in GC_do_enumerate_reachable_objects for details. */
+#    define OK_EAGER_SWEEP_INITZ /* comma */, FALSE
+
+#ifdef ENABLE_DISCLAIM
+  /* Mark from all, including unmarked, objects in block.  Used to    */
+  /* protect objects reachable from reclaim notifiers.                */
+  GC_bool ok_mark_unconditionally;
+
+  /* The disclaim procedure is called before obj is reclaimed, but    */
+  /* must also tolerate being called with object from free list.      */
+  /* Non-zero exit prevents object from being reclaimed.              */
+  int(GC_CALLBACK *ok_disclaim_proc)(void * /*obj*/);
+#  define OK_DISCLAIM_INITZ /* comma */ , FALSE, 0
+#else
+#  define OK_DISCLAIM_INITZ /* empty */
+#endif
+
+#if !defined(ENABLE_TLS_ACCESS_BY_ADDRESS) && !defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+} GC_obj_kinds[MAXOBJKINDS];
+#else
+} GC_obj_kinds_instance[MAXOBJKINDS];
+#endif
+
+#if !defined(ENABLE_TLS_ACCESS_BY_ADDRESS) && !defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+#define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds[0]))
+#define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds))
+#endif
+
 /* Lists of all heap blocks and free lists as well as other random data */
 /* structures that should not be scanned by the collector.  These are   */
 /* grouped together in a struct so that they can be easily skipped by   */
@@ -1746,8 +1811,9 @@ struct _GC_arrays {
   /* chain is GC_all_nils.                                          */
   bottom_index *_top_index[TOP_SZ];
 
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
   GC_signed_word GC_bytes_found;
+  struct obj_kind GC_obj_kinds_instance[MAXOBJKINDS];
 #endif
 };
 
@@ -1755,6 +1821,13 @@ struct _GC_arrays {
 GC_EXTERN word GC_tls_gc_array_offset;
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
 #define GC_arrays (*(((struct _GC_arrays*)(GC_tls_base_address() + GC_tls_gc_array_offset))))
+#define GC_obj_kinds (GC_arrays.GC_obj_kinds_instance)
+#elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+GC_EXTERN word GC_tls_gc_array_offset;
+GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
+GC_API_PRIV MAY_THREAD_LOCAL pthread_key_t GC_arrays_pthread_key;
+#define GC_arrays (*(((struct _GC_arrays*)(*((size_t*)(GC_tls_base_address()+GC_tls_gc_array_offset))))))
+#define GC_obj_kinds (GC_arrays.GC_obj_kinds_instance)
 #else
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 #endif
@@ -1789,79 +1862,12 @@ GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 #define GC_uobjfreelist GC_arrays._uobjfreelist
 #define GC_valid_offsets GC_arrays._valid_offsets
 
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
 #define beginGC_arrays ((ptr_t)(&GC_arrays_instance))
 #define endGC_arrays (beginGC_arrays + sizeof(GC_arrays_instance))
 #else
 #define beginGC_arrays ((ptr_t)(&GC_arrays))
 #define endGC_arrays (beginGC_arrays + sizeof(GC_arrays))
-#endif
-
-/* Object kinds: */
-#ifndef MAXOBJKINDS
-#  ifdef GC_DEBUG
-#    define MAXOBJKINDS 32
-#  else
-#    ifdef SMALL_CONFIG
-#      define MAXOBJKINDS 16
-#    else
-#      define MAXOBJKINDS 24
-#    endif
-#  endif
-#endif /* !MAXOBJKINDS */
-GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
-  /* Array of free-list headers for this kind of object.  Point either  */
-  /* to GC_arrays or to storage allocated with GC_scratch_alloc.        */
-  void **ok_freelist;
-
-  /* List headers for lists of blocks waiting to be swept.  Indexed by  */
-  /* object size in granules.                                           */
-  struct hblk **ok_reclaim_list;
-
-  /* Descriptor template for objects in this block.     */
-  word ok_descriptor;
-
-  /* Add object size in bytes to descriptor template to obtain          */
-  /* descriptor.  Otherwise the template is used as is.                 */
-  GC_bool ok_relocate_descr;
-
-  /* Clear objects before putting them on the free list.        */
-  GC_bool ok_init;
-
-  GC_bool ok_eager_sweep;
-                       /* Sweep unmarked object immediately. See comments   */
-                       /* in GC_do_enumerate_reachable_objects for details. */
-#    define OK_EAGER_SWEEP_INITZ /* comma */, FALSE
-
-#ifdef ENABLE_DISCLAIM
-  /* Mark from all, including unmarked, objects in block.  Used to    */
-  /* protect objects reachable from reclaim notifiers.                */
-  GC_bool ok_mark_unconditionally;
-
-  /* The disclaim procedure is called before obj is reclaimed, but    */
-  /* must also tolerate being called with object from free list.      */
-  /* Non-zero exit prevents object from being reclaimed.              */
-  int(GC_CALLBACK *ok_disclaim_proc)(void * /*obj*/);
-#  define OK_DISCLAIM_INITZ /* comma */ , FALSE, 0
-#else
-#  define OK_DISCLAIM_INITZ /* empty */
-#endif
-
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
-} GC_obj_kinds_instance[MAXOBJKINDS];
-#else
-} GC_obj_kinds[MAXOBJKINDS];
-#endif
-
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
-GC_EXTERN word GC_tls_gc_obj_kinds_offset;
-#define GC_obj_kinds (((struct obj_kind*)(GC_tls_base_address() + GC_tls_gc_obj_kinds_offset)))
-
-#define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds_instance[0]))
-#define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds_instance))
-#else
-#define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds[0]))
-#define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds))
 #endif
 
 /* Variables that used to be in GC_arrays, but need to be accessed by   */
@@ -3012,7 +3018,7 @@ GC_EXTERN MAY_THREAD_LOCAL unsigned GC_fail_count;
 
 /* Number of reclaimed bytes after garbage collection; protected by the */
 /* allocator lock.                                                      */
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
 #define GC_bytes_found GC_arrays.GC_bytes_found
 #else
 GC_EXTERN MAY_THREAD_LOCAL GC_signed_word GC_bytes_found;

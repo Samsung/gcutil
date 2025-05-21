@@ -70,6 +70,10 @@ __thread unsigned char GC_cancel_disable_count = 0;
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
 word GC_tls_gc_array_offset;
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance /* = { 0 } */;
+#elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+word GC_tls_gc_array_offset;
+MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance /* = { 0 } */;
+MAY_THREAD_LOCAL pthread_key_t GC_arrays_pthread_key;
 #else
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* = { 0 } */;
 #endif
@@ -1052,6 +1056,26 @@ GC_parse_mem_size_arg(const char *str)
 
 #define GC_LOG_STD_NAME "gc.log"
 
+#if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+static size_t *
+check_pthread_key(pthread_key_t key, char *tls_base)
+{
+  pthread_setspecific(key, (void *)(0xbeefdead));
+  size_t *ptr = (size_t *)(tls_base);
+  size_t *tcb_may_end = (size_t *)(tls_base + 1024 * 4);
+
+  while (ptr < tcb_may_end) {
+    if (*ptr == 0xbeefdead) {
+      pthread_setspecific(key, NULL);
+      return ptr;
+    }
+    ptr++;
+  }
+  pthread_setspecific(key, NULL);
+  return NULL;
+}
+#endif
+
 GC_API void GC_CALL
 GC_init(void)
 {
@@ -1081,14 +1105,43 @@ GC_init(void)
     GC_tls_gc_array_offset = tls_distance;
   }
 
-  tls_distance = (char *)&GC_obj_kinds_instance - tls_base;
-  if (GC_tls_gc_obj_kinds_offset) {
-    if (tls_distance != GC_tls_gc_obj_kinds_offset) {
-      ABORT("there is a error calc tls offset");
+  memcpy(&GC_arrays_instance.GC_obj_kinds_instance, &GC_obj_kinds_instance,
+         sizeof(GC_obj_kinds_instance));
+#elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+  char *tls_base = GC_tls_base_address();
+  int key_create_return;
+  pthread_key_t dummy_key[PTHREAD_KEYS_MAX];
+  int dummy_key_count = 0;
+  if (!GC_tls_gc_array_offset) {
+    for (size_t i = 0; i < PTHREAD_KEYS_MAX / 4; i++) {
+      pthread_key_t key;
+      key_create_return = pthread_key_create(&key, NULL);
+      if (key_create_return) {
+        ABORT("failed to create pthread_key");
+      }
+      dummy_key[dummy_key_count++] = key;
     }
-  } else {
-    GC_tls_gc_obj_kinds_offset = tls_distance;
+
+    key_create_return = pthread_key_create(&GC_arrays_pthread_key, NULL);
+    if (key_create_return) {
+      ABORT("failed to create pthread_key");
+    }
+    size_t *ptr = check_pthread_key(GC_arrays_pthread_key, tls_base);
+    if (!ptr) {
+      ABORT("failed to check pthread_key");
+    }
+
+    GC_tls_gc_array_offset = (size_t)ptr - (size_t)tls_base;
+
+    for (size_t i = 0; i < dummy_key_count; i++) {
+      pthread_key_delete(dummy_key[i]);
+    }
   }
+
+  size_t **ptr = (size_t **)(GC_tls_base_address() + GC_tls_gc_array_offset);
+  *ptr = &GC_arrays_instance;
+  memcpy(&GC_arrays_instance.GC_obj_kinds_instance, &GC_obj_kinds_instance,
+         sizeof(GC_obj_kinds_instance));
 #endif
 
   GC_objfreelist_ptr = GC_objfreelist;
@@ -1429,7 +1482,12 @@ GC_init(void)
         = ((~(word)ALIGNMENT) + 1) | GC_DS_LENGTH;
 #endif
   GC_exclude_static_roots_inner(beginGC_arrays, endGC_arrays);
+
+#if !defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
+    && !defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
   GC_exclude_static_roots_inner(beginGC_obj_kinds, endGC_obj_kinds);
+#endif
+
 #ifdef SEPARATE_GLOBALS
   GC_exclude_static_roots_inner(beginGC_objfreelist, endGC_objfreelist);
   GC_exclude_static_roots_inner(beginGC_aobjfreelist, endGC_aobjfreelist);
