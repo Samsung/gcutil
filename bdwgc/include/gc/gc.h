@@ -682,6 +682,9 @@ GC_API size_t GC_CALL GC_size(const void * /* obj_addr */);
 GC_API void *GC_CALL GC_realloc(void * /* old_object */,
                                 size_t /* new_size_in_bytes */)
     /* 'realloc' attr */ GC_ATTR_ALLOC_SIZE(2);
+GC_API void *GC_CALL GC_realloc_no_shrink(void * /* old_object */,
+                                size_t /* new_size_in_bytes */)
+    /* 'realloc' attr */ GC_ATTR_ALLOC_SIZE(2);
 GC_API void *GC_CALL GC_debug_realloc(void * /* old_object */,
                                       size_t /* new_size_in_bytes */,
                                       GC_EXTRA_PARAMS)
@@ -1128,12 +1131,15 @@ GC_API /* 'realloc' attr */ GC_ATTR_ALLOC_SIZE(2) void *GC_CALL
 #ifdef GC_DEBUG_REPLACEMENT
 #  define GC_MALLOC(sz) GC_debug_malloc_replacement(sz)
 #  define GC_REALLOC(old, sz) GC_debug_realloc_replacement(old, sz)
+#  define GC_REALLOC_NO_SHRINK(old, sz) GC_debug_realloc_replacement(old, sz)
 #elif defined(GC_DEBUG)
 #  define GC_MALLOC(sz) GC_debug_malloc(sz, GC_EXTRAS)
 #  define GC_REALLOC(old, sz) GC_debug_realloc(old, sz, GC_EXTRAS)
+#  define GC_REALLOC_NO_SHRINK(old, sz) GC_debug_realloc(old, sz, GC_EXTRAS)
 #else
 #  define GC_MALLOC(sz) GC_malloc(sz)
 #  define GC_REALLOC(old, sz) GC_realloc(old, sz)
+#  define GC_REALLOC_NO_SHRINK(old, sz) GC_realloc_no_shrink(old, sz)
 #endif /* !GC_DEBUG_REPLACEMENT && !GC_DEBUG */
 #ifdef GC_DEBUG
 #  define GC_MALLOC_ATOMIC(sz) GC_debug_malloc_atomic(sz, GC_EXTRAS)

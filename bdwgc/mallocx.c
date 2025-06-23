@@ -184,6 +184,112 @@ GC_realloc(void *p, size_t lb)
 #undef cleared_p
 }
 
+GC_API void *GC_CALL
+GC_realloc_no_shrink(void *p, size_t lb)
+{
+  hdr *hhdr;
+  void *result;
+#if defined(_FORTIFY_SOURCE) && defined(__GNUC__) && !defined(__clang__)
+  /* Use cleared_p instead of p as a workaround to avoid        */
+  /* passing alloc_size(lb) attribute associated with p to      */
+  /* memset (including a memset call inside GC_free).           */
+  volatile GC_uintptr_t cleared_p = (GC_uintptr_t)p;
+#else
+#  define cleared_p p
+#endif
+  size_t sz;      /* current size in bytes */
+  size_t orig_sz; /* original sz (in bytes) */
+  int obj_kind;
+
+  if (NULL == p) {
+    /* Required by ANSI.      */
+    return GC_malloc(lb);
+  }
+  if (0 == lb) /* and p != NULL */ {
+#ifndef IGNORE_FREE
+    GC_free(p);
+#endif
+    return NULL;
+  }
+  hhdr = HDR(HBLKPTR(p));
+  sz = hhdr->hb_sz;
+  obj_kind = hhdr->hb_obj_kind;
+  orig_sz = sz;
+
+  if (sz > MAXOBJBYTES) {
+    const struct obj_kind *ok = &GC_obj_kinds[obj_kind];
+    word descr = ok->ok_descriptor;
+
+    /* Round it up to the next whole heap block.    */
+    sz = (sz + HBLKSIZE - 1) & ~(HBLKSIZE - 1);
+#if ALIGNMENT > GC_DS_TAGS
+    /* An extra byte is not added in case of ignore-off-page  */
+    /* allocated objects not smaller than HBLKSIZE.           */
+    GC_ASSERT(sz >= HBLKSIZE);
+    if (EXTRA_BYTES != 0 && (hhdr->hb_flags & IGNORE_OFF_PAGE) != 0
+        && obj_kind == NORMAL)
+      descr += ALIGNMENT; /* or set to 0 */
+#endif
+    if (ok->ok_relocate_descr) {
+      descr += sz;
+    }
+
+    /* GC_realloc might be changing the block size while            */
+    /* GC_reclaim_block or GC_clear_hdr_marks is examining it.      */
+    /* The change to the size field is benign, in that GC_reclaim   */
+    /* (and GC_clear_hdr_marks) would work correctly with either    */
+    /* value, since we are not changing the number of objects in    */
+    /* the block.  But seeing a half-updated value (though unlikely */
+    /* to occur in practice) could be probably bad.                 */
+    /* Using unordered atomic accesses on the size and hb_descr     */
+    /* fields would solve the issue.  (The alternate solution might */
+    /* be to initially overallocate large objects, so we do not     */
+    /* have to adjust the size in GC_realloc, if they still fit.    */
+    /* But that is probably more expensive, since we may end up     */
+    /* scanning a bunch of zeros during GC.)                        */
+#ifdef AO_HAVE_store
+    AO_store(&hhdr->hb_sz, sz);
+    AO_store((AO_t *)&hhdr->hb_descr, descr);
+#else
+    {
+      LOCK();
+      hhdr->hb_sz = sz;
+      hhdr->hb_descr = descr;
+      UNLOCK();
+    }
+#endif
+
+#ifdef MARK_BIT_PER_OBJ
+    GC_ASSERT(hhdr->hb_inv_sz == LARGE_INV_SZ);
+#else
+    GC_ASSERT((hhdr->hb_flags & LARGE_BLOCK) != 0
+              && hhdr->hb_map[ANY_INDEX] == 1);
+#endif
+    if (IS_UNCOLLECTABLE(obj_kind))
+      GC_non_gc_bytes += (sz - orig_sz);
+    /* Extra area is already cleared by GC_alloc_large_and_clear. */
+  }
+  if (ADD_EXTRA_BYTES(lb) <= sz) {
+    if (orig_sz > lb) {
+      /* Clear unneeded part of object to avoid bogus pointer */
+      /* tracing.                                             */
+      BZERO((ptr_t)cleared_p + lb, orig_sz - lb);
+    }
+    return p;
+  }
+  result = GC_generic_or_special_malloc((word)lb, obj_kind);
+  if (EXPECT(result != NULL, TRUE)) {
+    /* In case of shrink, it could also return original object.       */
+    /* But this gives the client warning of imminent disaster.        */
+    BCOPY(p, result, sz);
+#ifndef IGNORE_FREE
+    GC_free((ptr_t)cleared_p);
+#endif
+  }
+  return result;
+#undef cleared_p
+}
+
 #if defined(REDIRECT_MALLOC) && !defined(REDIRECT_REALLOC)
 #  define REDIRECT_REALLOC GC_realloc
 #endif
