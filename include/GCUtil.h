@@ -1,9 +1,10 @@
 #ifndef __GCUtil__
 #define __GCUtil__
 
-#include <gc.h>
-#include <gc_mark.h>
-#include <gc_typed.h>
+#include "gc/gc.h"
+#include "gc/gc_mark.h"
+#include "gc/gc_typed.h"
+
 #include <assert.h>
 #include <cstdlib>
 
@@ -98,10 +99,10 @@ void GC_print_heap_usage();
 #undef GC_GENERIC_MALLOC_IGNORE_OFF_PAGE
 #define GC_GENERIC_MALLOC_IGNORE_OFF_PAGE GC_GENERIC_MALLOC
 
-#include <gc_allocator.h>
-#include <gc_cpp.h>
+#include "gc/gc_allocator.h"
+#include "gc/gc_cpp.h"
 #ifdef GC_DEBUG
-#include <gc_backptr.h>
+#include "gc/gc_backptr.h"
 #endif
 
 #include "Allocator.h"

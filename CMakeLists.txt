@@ -1,10 +1,10 @@
 PROJECT(gc)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12 FATAL_ERROR)
 
-INCLUDE_DIRECTORIES(bdwgc/include/ bdwgc/include/gc)
+INCLUDE_DIRECTORIES(include)
 
-FILE(GLOB GCUTIL_BDWGC_SRC bdwgc/*.c)
-FILE(GLOB GCUTIL_SRC *.cpp)
+FILE(GLOB GCUTIL_BDWGC_SRC *.c)
+SET (GCUTIL_SRC Allocator.cpp LeakChecker.cpp)
 
 SET (COMPILER_CLANG_CL OFF)
 IF (${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang")
@@ -64,4 +64,4 @@ add_compile_options(${GCUTIL_CFLAGS_FROM_ENV} ${GCUTIL_CFLAGS_FROM_EXTERNAL})
 ADD_LIBRARY(gc-lib STATIC ${GCUTIL_BDWGC_SRC} ${GCUTIL_SRC})
 # ADD_LIBRARY(gc-lib-shared SHARED ${GCUTIL_BDWGC_SRC} ${GCUTIL_SRC})
 
-target_include_directories(gc-lib PUBLIC ./ ./bdwgc/include/gc)
+target_include_directories(gc-lib PUBLIC ./include)
