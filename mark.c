@@ -1036,7 +1036,7 @@ GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
 #endif
   int i = 0;
 
-  i = proc(start, arr);
+  i = proc((/* no const */ void *)start, arr);
   for (; i < number_of_sub_pointer; i++) {
     if (arr[i].to)
       PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit,
