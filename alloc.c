@@ -1474,6 +1474,20 @@ GC_gcollect_and_unmap(void)
   (void)GC_try_to_collect_general(GC_never_stop_func, TRUE);
 }
 
+/* STATIC */ MAY_THREAD_LOCAL GC_os_get_mem_proc GC_on_os_get_mem = 0;
+
+GC_API void GC_CALL
+GC_set_os_get_mem_proc(GC_os_get_mem_proc fn)
+{
+  GC_on_os_get_mem = fn;
+}
+
+GC_API GC_os_get_mem_proc GC_CALL
+GC_get_os_get_mem_proc(void)
+{
+  return GC_on_os_get_mem;
+}
+
 GC_INNER ptr_t
 GC_os_get_mem(size_t bytes)
 {
@@ -1493,6 +1507,9 @@ GC_os_get_mem(size_t bytes)
 #endif
   GC_our_mem_bytes += bytes;
   GC_VERBOSE_LOG_PRINTF("Got %lu bytes from OS\n", (unsigned long)bytes);
+  if (GC_on_os_get_mem) {
+    GC_on_os_get_mem(space, bytes);
+  }
   return space;
 }
 

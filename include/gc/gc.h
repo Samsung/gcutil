@@ -1590,6 +1590,10 @@ GC_API GC_abort_func GC_CALL GC_get_abort_func(void);
 /* memory.                                                              */
 GC_API void GC_CALL GC_abort_on_oom(void);
 
+typedef void(GC_CALLBACK *GC_os_get_mem_proc)(void* ptr, size_t length);
+GC_API void GC_CALL GC_set_os_get_mem_proc(GC_os_get_mem_proc) GC_ATTR_NONNULL(1);
+GC_API GC_os_get_mem_proc GC_CALL GC_get_os_get_mem_proc(void);
+
 /* The following is intended to be used by a higher level (e.g.         */
 /* Java-like) finalization facility.  It is expected that finalization  */
 /* code will arrange for hidden pointers to disappear.  Otherwise,      */
