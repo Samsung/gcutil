@@ -2113,7 +2113,7 @@ void *switch_get_mem(size_t lb);
 /* __data_start is usually defined in the target linker script.   */
 extern int __data_start[];
 #    define DATASTART ((ptr_t)__data_start)
-extern void *__stack_base__;
+extern char __stack_base__[];
 #    define STACKBOTTOM ((ptr_t)__stack_base__)
 #  endif
 #endif /* AARCH64 */
@@ -2182,8 +2182,9 @@ void *n3ds_get_stack_bottom(void);
 /* __data_start is usually defined in the target linker script.  */
 extern int __data_start[];
 #    define DATASTART ((ptr_t)__data_start)
-/* __stack_base__ is set in newlib/libc/sys/arm/crt0.S  */
-extern void *__stack_base__;
+/* __stack_base__ is a linker symbol whose ADDRESS is the initial SP.
+ * Declare as array so &__stack_base__[0] gives the address, not a deref. */
+extern char __stack_base__[];
 #    define STACKBOTTOM ((ptr_t)__stack_base__)
 #  endif
 #  ifdef SYMBIAN
