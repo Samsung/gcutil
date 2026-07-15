@@ -2829,19 +2829,63 @@ GC_get_mem(size_t bytes)
      * resources or possibly cause `VirtualAlloc()` to fail (observed
      * in Windows 2000 SP2).
      */
-    result = VirtualAlloc(NULL,
-#    ifdef MPROTECT_VDB
-                          SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+#    if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    {
+      static ptr_t base_address = NULL;
+      int retry_count = 0;
+
+      if (base_address == NULL) {
+        base_address = (ptr_t)GC_sysinfo.lpMinimumApplicationAddress;
+      }
+      while (retry_count < 2) {
+        result = VirtualAlloc(base_address,
+#      ifdef MPROTECT_VDB
+                              SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+#      else
+                              bytes,
+#      endif
+                              MEM_COMMIT
+#      ifndef MSWIN_XBOX1
+                                  | MEM_RESERVE
+#      endif
+                                  | GetWriteWatch_alloc_flag | GC_mem_top_down,
+                              GC_pages_executable ? PAGE_EXECUTE_READWRITE
+                                                  : PAGE_READWRITE);
+        if (!GetLastError()) {
+          break;
+        }
+        SetLastError(0);
+        base_address = (ptr_t)(ADDR(base_address)
+#      ifdef MPROTECT_VDB
+                               + SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD));
+#      else
+                               + bytes);
+#      endif
+        if (ADDR(base_address) > 1073741824ULL * 4) {
+          retry_count++;
+          base_address = (ptr_t)GC_sysinfo.lpMinimumApplicationAddress;
+        }
+      }
+      base_address = (ptr_t)result;
+      if (ADDR(result) + bytes > 1073741824ULL * 4) {
+        ABORT("Cannot allocate memory");
+      }
+    }
 #    else
+    result = VirtualAlloc(NULL,
+#      ifdef MPROTECT_VDB
+                          SIZET_SAT_ADD(bytes, VIRTUAL_ALLOC_PAD),
+#      else
                           bytes,
-#    endif
+#      endif
                           MEM_COMMIT
-#    ifndef MSWIN_XBOX1
+#      ifndef MSWIN_XBOX1
                               | MEM_RESERVE
-#    endif
+#      endif
                               | GetWriteWatch_alloc_flag | GC_mem_top_down,
                           GC_pages_executable ? PAGE_EXECUTE_READWRITE
                                               : PAGE_READWRITE);
+#    endif
 #    undef IGNORE_PAGES_EXECUTABLE
   }
 #  endif
