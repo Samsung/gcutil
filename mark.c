@@ -71,8 +71,8 @@ GC_noop1_ptr(volatile void *p)
  * mark descriptors.  Note: `GC_obj_kinds[NORMAL].ok_descriptor` is
  * adjusted in `GC_init()` for `EXTRA_BYTES`.
  */
-#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
-word GC_tls_gc_obj_kinds_offset;
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
+    || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
 GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds_instance[MAXOBJKINDS]
     = {
 #else
