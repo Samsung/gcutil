@@ -935,6 +935,13 @@ GC_push_regs_and_stack(ptr_t cold_gc_frame)
 
 #endif /* !STACK_NOT_SCANNED */
 
+STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+GC_API void GC_CALL
+GC_register_mark_stack_func(GC_mark_stack_func func)
+{
+  GC_mark_stack_func_proc = func;
+}
+
 GC_API void GC_CALL
 GC_custom_push_regs_and_stack(GC_custom_push_proc fn, void *client_data,
                               const struct GC_stack_base *sb,
@@ -1055,6 +1062,12 @@ GC_push_roots(GC_bool all, ptr_t cold_gc_frame)
    * the mark stack.  This is usually done by saving the current
    * context on the stack, and then just tracing from the stack.
    */
+
+  if (GC_mark_stack_func_proc) {
+    (*GC_mark_stack_func_proc)();
+    return;
+  }
+
 #ifdef STACK_NOT_SCANNED
   UNUSED_ARG(cold_gc_frame);
 #else

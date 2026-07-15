@@ -228,13 +228,8 @@ Cautions:
     } else                         \
       throw std::bad_alloc()
 #else
-// The platform `new` header file is not included, so `bad_alloc` cannot
-// be thrown directly.
-GC_API GC_OOM_ABORT_THROW_ATTRIBUTE void GC_CALL GC_throw_bad_alloc();
-#  define GC_OP_NEW_OOM_CHECK(obj) \
-    if (obj) {                     \
-    } else                         \
-      GC_throw_bad_alloc()
+// "new" header is not included, so bad_alloc cannot be thrown directly.
+#  define GC_OP_NEW_OOM_CHECK(obj)
 #endif // !GC_NEW_ABORTS_ON_OOM && !GC_INCLUDE_NEW
 
 #ifdef GC_NAMESPACE
