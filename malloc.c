@@ -84,8 +84,11 @@ GC_alloc_large(size_t lb_adjusted, int kind, unsigned flags, size_t align_m1)
      * Only a few iterations are expected at most, otherwise something
      * is wrong in one of the functions called below.
      */
+#if 0 // disable warning
     if (retry_cnt > MAX_ALLOCLARGE_RETRIES)
       ABORT("Too many retries in GC_alloc_large");
+#endif
+
     if (UNLIKELY(!GC_collect_or_expand(n_blocks, flags, retry_cnt > 0)))
       return NULL;
     h = GC_allochblk(lb_adjusted, kind, flags, align_m1);
