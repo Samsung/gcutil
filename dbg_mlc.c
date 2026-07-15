@@ -33,7 +33,7 @@
 static int
 GC_rand(void)
 {
-  static GC_RAND_STATE_T seed;
+  static MAY_THREAD_LOCAL GC_RAND_STATE_T seed;
 
   return GC_RAND_NEXT(&seed);
 }
@@ -319,7 +319,8 @@ GC_check_annotated_obj(oh *ohdr)
 }
 #endif /* !SHORT_DBG_HDRS */
 
-STATIC GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS] = { 0 };
+STATIC MAY_THREAD_LOCAL GC_describe_type_fn GC_describe_type_fns[MAXOBJKINDS]
+    = { 0 };
 
 GC_API void GC_CALL
 GC_register_describe_type_fn(int kind, GC_describe_type_fn fn)
@@ -490,7 +491,7 @@ store_debug_info(void *base, size_t lb, GC_bool is_redirect, const char *fn,
   return result;
 }
 
-const size_t GC_debug_header_size = sizeof(oh);
+MAY_THREAD_LOCAL const size_t GC_debug_header_size = sizeof(oh);
 
 GC_API size_t GC_CALL
 GC_get_debug_header_size(void)

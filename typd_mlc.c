@@ -41,19 +41,19 @@
 #include "gc/gc_typed.h"
 
 /* Object kind for objects with indirect (possibly extended) descriptors. */
-STATIC int GC_explicit_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_explicit_kind = 0;
 
 /*
  * Object kind for objects with complex descriptors and
  * `GC_array_mark_proc`.
  */
-STATIC int GC_array_kind = 0;
+STATIC MAY_THREAD_LOCAL int GC_array_kind = 0;
 
 #define ED_INITIAL_SIZE 100
 
 /* Indices of the typed mark procedures. */
-STATIC unsigned GC_typed_mark_proc_index = 0;
-STATIC unsigned GC_array_mark_proc_index = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_typed_mark_proc_index = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_array_mark_proc_index = 0;
 
 STATIC void
 GC_push_typed_structures_proc(void)

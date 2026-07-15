@@ -36,11 +36,11 @@
  * or introducing dependencies on internal data structure layouts.
  */
 #include "private/gc_alloc_ptrs.h"
-void **const GC_objfreelist_ptr = GC_objfreelist;
-void **const GC_aobjfreelist_ptr = GC_aobjfreelist;
-void **const GC_uobjfreelist_ptr = GC_uobjfreelist;
+MAY_THREAD_LOCAL void **GC_objfreelist_ptr;
+MAY_THREAD_LOCAL void **GC_aobjfreelist_ptr;
+MAY_THREAD_LOCAL void **GC_uobjfreelist_ptr;
 #ifdef GC_ATOMIC_UNCOLLECTABLE
-void **const GC_auobjfreelist_ptr = GC_auobjfreelist;
+MAY_THREAD_LOCAL void **GC_auobjfreelist_ptr;
 #endif
 
 GC_API int GC_CALL
