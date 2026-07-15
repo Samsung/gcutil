@@ -2625,9 +2625,23 @@ struct _GC_arrays {
 #endif
 };
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+GC_EXTERN word GC_tls_gc_array_offset;
+GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
+#  define GC_arrays                                 \
+    (*(((struct _GC_arrays *)(GC_tls_base_address() \
+                              + GC_tls_gc_array_offset))))
+#else
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
-#define beginGC_arrays ((ptr_t)(&GC_arrays))
-#define endGC_arrays (beginGC_arrays + sizeof(GC_arrays))
+#endif
+
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+#  define beginGC_arrays ((ptr_t)(&GC_arrays_instance))
+#  define endGC_arrays (beginGC_arrays + sizeof(GC_arrays_instance))
+#else
+#  define beginGC_arrays ((ptr_t)(&GC_arrays))
+#  define endGC_arrays (beginGC_arrays + sizeof(GC_arrays))
+#endif
 
 /* Object kinds. */
 #ifndef MAXOBJKINDS
@@ -2687,10 +2701,21 @@ GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
 #else
 #  define OK_DISCLAIM_INITZ /*< empty */
 #endif
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+} GC_obj_kinds_instance[MAXOBJKINDS];
+
+GC_EXTERN word GC_tls_gc_obj_kinds_offset;
+#  define GC_obj_kinds \
+    ((struct obj_kind *)(GC_tls_base_address() + GC_tls_gc_obj_kinds_offset))
+
+#  define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds_instance[0]))
+#  define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds_instance))
+#else
 } GC_obj_kinds[MAXOBJKINDS];
 
-#define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds[0]))
-#define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds))
+#  define beginGC_obj_kinds ((ptr_t)(&GC_obj_kinds[0]))
+#  define endGC_obj_kinds (beginGC_obj_kinds + sizeof(GC_obj_kinds))
+#endif
 
 /* The predefined kinds. */
 #define PTRFREE GC_I_PTRFREE

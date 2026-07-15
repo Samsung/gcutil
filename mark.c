@@ -71,30 +71,38 @@ GC_noop1_ptr(volatile void *p)
  * mark descriptors.  Note: `GC_obj_kinds[NORMAL].ok_descriptor` is
  * adjusted in `GC_init()` for `EXTRA_BYTES`.
  */
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+word GC_tls_gc_obj_kinds_offset;
+GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds_instance[MAXOBJKINDS]
+    = {
+#else
 GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
-  /* `PTRFREE` */
-  { 0, 0 /*< filled in dynamically */,
-    /* `0 |` */ GC_DS_LENGTH, FALSE,
-    FALSE OK_EAGER_SWEEP_INITZ
-        /*, */ OK_DISCLAIM_INITZ },
-  /* `NORMAL` */
-  { 0, 0,
-    /* `0 |` */ GC_DS_LENGTH, TRUE /*< add length to descriptor template */,
-    TRUE OK_EAGER_SWEEP_INITZ
-        /*, */ OK_DISCLAIM_INITZ },
-  /* `UNCOLLECTABLE` */
-  { 0, 0,
-    /* `0 |` */ GC_DS_LENGTH, TRUE /*< add length to descriptor template */,
-    TRUE OK_EAGER_SWEEP_INITZ
-        /*, */ OK_DISCLAIM_INITZ },
-#ifdef GC_ATOMIC_UNCOLLECTABLE
-  /* `AUNCOLLECTABLE` */
-  { 0, 0,
-    /* `0 |` */ GC_DS_LENGTH, FALSE,
-    FALSE OK_EAGER_SWEEP_INITZ
-        /*, */ OK_DISCLAIM_INITZ },
 #endif
-};
+        /* `PTRFREE` */
+        { 0, 0 /*< filled in dynamically */,
+          /* `0 |` */ GC_DS_LENGTH, FALSE,
+          FALSE OK_EAGER_SWEEP_INITZ
+              /*, */ OK_DISCLAIM_INITZ },
+        /* `NORMAL` */
+        { 0, 0,
+          /* `0 |` */ GC_DS_LENGTH,
+          TRUE /*< add length to descriptor template */,
+          TRUE OK_EAGER_SWEEP_INITZ
+              /*, */ OK_DISCLAIM_INITZ },
+        /* `UNCOLLECTABLE` */
+        { 0, 0,
+          /* `0 |` */ GC_DS_LENGTH,
+          TRUE /*< add length to descriptor template */,
+          TRUE OK_EAGER_SWEEP_INITZ
+              /*, */ OK_DISCLAIM_INITZ },
+#ifdef GC_ATOMIC_UNCOLLECTABLE
+        /* `AUNCOLLECTABLE` */
+        { 0, 0,
+          /* `0 |` */ GC_DS_LENGTH, FALSE,
+          FALSE OK_EAGER_SWEEP_INITZ
+              /*, */ OK_DISCLAIM_INITZ },
+#endif
+      };
 
 #ifndef GC_NO_DEINIT
 /* Note: keep this close to `GC_obj_kinds` definition. */

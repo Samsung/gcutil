@@ -255,6 +255,26 @@ GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void *GC_CALL
  */
 GC_API void GC_CALL GC_print_free_list(int /* `kind` */, size_t /* `lg` */);
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
+GC_INLINE char *
+GC_tls_base_address(void)
+{
+#  if defined(X86_64)
+  char *fs;
+  asm inline("mov %%fs:0, %0" : "=r"(fs));
+  return fs;
+#  elif defined(I386)
+  char *gs;
+  asm inline("mov %%gs:0, %0" : "=r"(gs));
+  return gs;
+#  elif defined(ARM32) || defined(AARCH64)
+  return (char *)(__builtin_thread_pointer());
+#  else
+#    error "unsupported arch"
+#  endif
+}
+#endif
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif
