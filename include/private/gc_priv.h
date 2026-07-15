@@ -3691,7 +3691,11 @@ GC_EXTERN MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free;
  * occasionally.  It is OK to read it not acquiring the allocator lock.
  * Once set to `TRUE`, it is never cleared.
  */
-#  define get_have_errors() GC_have_errors
+#  if defined(NO_DEBUGGING)
+#    define get_have_errors() FALSE
+#  else
+#    define get_have_errors() GC_have_errors
+#  endif
 #endif /* !AO_HAVE_store */
 
 #define VERBOSE 2
