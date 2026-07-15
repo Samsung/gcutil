@@ -2387,6 +2387,11 @@ GC_API void *GC_CALL GC_is_valid_displacement(void * /* `p` */);
  */
 GC_API void GC_CALL GC_dump(void);
 
+/* This function appends the GC status log to give file                 */
+/* which can be interpreted by gnuplot (and MS Excel of course).        */
+GC_API void GC_CALL GC_dump_for_graph(const char * /* log_file_name */,
+                                      const char * /* phase_name */);
+
 /**
  * The same as `GC_dump` but allows to specify the name of dump and
  * does not acquire the allocator lock.  If `name` is non-`NULL`, it is

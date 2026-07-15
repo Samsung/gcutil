@@ -854,6 +854,15 @@ GC_allochblk(size_t lb_adjusted, int kind,
   int may_split;
   size_t split_limit; /* highest index of free list whose blocks we split */
 
+  if (!GC_incremental && GC_get_bytes_since_gc() > 10 * 1024 * 1024) {
+    /*
+     * To reduce fragmentation overhead,
+     * collect occasionally before allocating new block
+     * if many objects have been allocated without GC.
+     */
+    GC_gcollect_inner();
+  }
+
   GC_ASSERT(I_HOLD_LOCK());
   GC_ASSERT((lb_adjusted & (GC_GRANULE_BYTES - 1)) == 0);
   blocks = OBJ_SZ_TO_BLOCKS_CHECKED(lb_adjusted);

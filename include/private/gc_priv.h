@@ -2664,6 +2664,11 @@ GC_EXTERN struct obj_kind {
   /* Clear objects before putting them on the free list. */
   GC_bool ok_init;
 
+  GC_bool ok_eager_sweep;
+  /* Sweep unmarked object immediately. See comments   */
+  /* in GC_do_enumerate_reachable_objects for details. */
+#define OK_EAGER_SWEEP_INITZ /* comma */ , FALSE
+
 #ifdef ENABLE_DISCLAIM
   /*
    * Mark from all, including unmarked, objects in block.
@@ -4531,13 +4536,15 @@ GC_INNER word GC_compute_root_size(void);
     GC_ASSERT(GC_compute_root_size() == GC_root_size);               \
   } while (0)
 
-#ifndef NO_DEBUGGING
 /*
  * Return the number of set mark bits in the given header.
  * Remains externally visible as used by GNU `gcj` currently.
+ * Always declared (both debug/release), since
+ * GC_gather_information_for_escargot (reclaim.c) needs it unconditionally.
  */
 unsigned GC_n_set_marks(const hdr *);
 
+#ifndef NO_DEBUGGING
 /* A flag to generate regular debugging dumps. */
 GC_EXTERN GC_bool GC_dump_regularly;
 

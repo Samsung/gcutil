@@ -492,6 +492,11 @@ GC_init_linux_data_start(void)
 {
   ptr_t data_end = DATAEND;
 
+#  if defined(TIZEN) || defined(PLATFORM_ANDROID)
+  GC_data_start = DATAEND;
+  return;
+#  endif
+
 #  if (defined(LINUX) || defined(HURD)) && defined(USE_PROG_DATA_START)
   /*
    * Try the easy approaches first.  However, this may lead to wrong

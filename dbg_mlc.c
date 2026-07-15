@@ -166,6 +166,14 @@ GC_print_backtrace(void *p)
   int i;
 
   GC_ASSERT(I_DONT_HOLD_LOCK());
+
+  ptr_t object_start;
+
+  if (GC_base(current) == 0) {
+    GC_err_printf("GC_base(%p) == 0\n", current);
+    return;
+  }
+
   GC_print_heap_obj((ptr_t)GC_base(current));
 
   for (i = 0;; ++i) {
@@ -184,7 +192,8 @@ GC_print_backtrace(void *p)
     GC_err_printf("Reachable via %d levels of pointers from ", i);
     switch (source) {
     case GC_REFD_FROM_ROOT:
-      GC_err_printf("root at %p\n\n", base);
+      /* Print more detailed information in backtrace */
+      GC_err_printf("root at %p (=> points %p)\n\n", base, *((void **)base));
       return;
     case GC_REFD_FROM_REG:
       GC_err_printf("root in register\n\n");
@@ -193,9 +202,23 @@ GC_print_backtrace(void *p)
       GC_err_printf("list of finalizable objects\n\n");
       return;
     case GC_REFD_FROM_HEAP:
-      GC_err_printf("offset %ld in object:\n", (long)offset);
       /* Take `GC_base(base)` to get real base, i.e. header. */
       GC_print_heap_obj((ptr_t)GC_base(base));
+      /* Print more detailed information in backtrace */
+      object_start = (ptr_t)GC_base(base) + sizeof(oh);
+      GC_bool interior = ((*((void **)(object_start + offset))) != current);
+      if (interior) {
+        void *of = (*((void **)(object_start + offset)));
+        int interior_offset = ((ptr_t)of - (ptr_t)current);
+        GC_err_printf("offset %ld in object %p (=> points %p%s %d):\n",
+                      (long)offset, object_start,
+                      *((void **)(object_start + offset)),
+                      interior ? ", interior" : "", interior_offset);
+      } else {
+        GC_err_printf("offset %ld in object %p (=> points %p):\n",
+                      (long)offset, object_start,
+                      *((void **)(object_start + offset)));
+      }
       break;
     default:
       GC_err_printf("INTERNAL ERROR: UNEXPECTED SOURCE!!!!\n");

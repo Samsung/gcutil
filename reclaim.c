@@ -15,6 +15,9 @@
  * modified is included with the above copyright notice.
  */
 
+// force enable eager sweep
+#define EAGER_SWEEP
+
 #include "private/gc_priv.h"
 
 #ifdef ENABLE_DISCLAIM
@@ -692,81 +695,6 @@ struct Print_stats {
   size_t total_bytes;
 };
 
-#  ifdef USE_MARK_BYTES
-/*
- * There could be a race between `GC_clear_hdr_marks` and this function
- * but the latter is for a debug purpose.
- */
-GC_ATTR_NO_SANITIZE_THREAD
-unsigned
-GC_n_set_marks(const hdr *hhdr)
-{
-  unsigned result = 0;
-  size_t i;
-  size_t offset = MARK_BIT_OFFSET(hhdr->hb_sz);
-  size_t limit = FINAL_MARK_BIT(hhdr->hb_sz);
-
-  for (i = 0; i < limit; i += offset) {
-    result += (unsigned)hhdr->hb_marks[i];
-  }
-
-  /* The one should be set past the end. */
-  GC_ASSERT(hhdr->hb_marks[limit]);
-  return result;
-}
-
-#  else
-/* Number of set bits in a word.  Not performance critical. */
-static unsigned
-count_ones(word v)
-{
-  unsigned result = 0;
-
-  for (; v > 0; v >>= 1) {
-    if (v & 1)
-      result++;
-  }
-  return result;
-}
-
-unsigned
-GC_n_set_marks(const hdr *hhdr)
-{
-  unsigned result = 0;
-  size_t i;
-#    ifdef MARK_BIT_PER_OBJ
-  size_t n_objs = HBLK_OBJS(hhdr->hb_sz);
-  size_t n_mark_words = divWORDSZ(n_objs > 0 ? n_objs : 1); /*< round down */
-
-  for (i = 0; i <= n_mark_words; i++) {
-    result += count_ones(hhdr->hb_marks[i]);
-  }
-#    else
-
-  for (i = 0; i < HB_MARKS_SZ; i++) {
-    result += count_ones(hhdr->hb_marks[i]);
-  }
-#    endif
-  GC_ASSERT(result > 0);
-  /* Exclude the one bit set past the end. */
-  result--;
-
-#    ifndef MARK_BIT_PER_OBJ
-  if (IS_UNCOLLECTABLE(hhdr->hb_obj_kind)) {
-    size_t lg = BYTES_TO_GRANULES(hhdr->hb_sz);
-
-    /*
-     * As mentioned in `GC_set_hdr_marks`, all the bits are set instead of
-     * every `n`-th, thus the result should be adjusted.
-     */
-    GC_ASSERT((unsigned)lg != 0 && result % lg == 0);
-    result /= (unsigned)lg;
-  }
-#    endif
-  return result;
-}
-#  endif /* !USE_MARK_BYTES */
-
 GC_API unsigned GC_CALL
 GC_count_set_marks_in_hblk(const void *p)
 {
@@ -828,6 +756,158 @@ GC_print_free_list(int kind, size_t lg)
   }
 }
 #endif /* !NO_DEBUGGING */
+
+/*
+ * GC_n_set_marks is always compiled (i.e., both in debug/release mode)
+ * since GC_gather_information_for_escargot (below) needs it
+ * unconditionally, unlike the rest of the debugging routines above.
+ */
+#ifdef USE_MARK_BYTES
+/*
+ * There could be a race between `GC_clear_hdr_marks` and this function
+ * but the latter is for a debug purpose.
+ */
+GC_ATTR_NO_SANITIZE_THREAD
+unsigned
+GC_n_set_marks(const hdr *hhdr)
+{
+  unsigned result = 0;
+  size_t i;
+  size_t offset = MARK_BIT_OFFSET(hhdr->hb_sz);
+  size_t limit = FINAL_MARK_BIT(hhdr->hb_sz);
+
+  for (i = 0; i < limit; i += offset) {
+    result += (unsigned)hhdr->hb_marks[i];
+  }
+
+  /* The one should be set past the end. */
+  GC_ASSERT(hhdr->hb_marks[limit]);
+  return result;
+}
+
+#else
+/* Number of set bits in a word.  Not performance critical. */
+static unsigned
+count_ones(word v)
+{
+  unsigned result = 0;
+
+  for (; v > 0; v >>= 1) {
+    if (v & 1)
+      result++;
+  }
+  return result;
+}
+
+unsigned
+GC_n_set_marks(const hdr *hhdr)
+{
+  unsigned result = 0;
+  size_t i;
+#  ifdef MARK_BIT_PER_OBJ
+  size_t n_objs = HBLK_OBJS(hhdr->hb_sz);
+  size_t n_mark_words = divWORDSZ(n_objs > 0 ? n_objs : 1); /*< round down */
+
+  for (i = 0; i <= n_mark_words; i++) {
+    result += count_ones(hhdr->hb_marks[i]);
+  }
+#  else
+
+  for (i = 0; i < HB_MARKS_SZ; i++) {
+    result += count_ones(hhdr->hb_marks[i]);
+  }
+#  endif
+  GC_ASSERT(result > 0);
+  /* Exclude the one bit set past the end. */
+  result--;
+
+#  ifndef MARK_BIT_PER_OBJ
+  if (IS_UNCOLLECTABLE(hhdr->hb_obj_kind)) {
+    size_t lg = BYTES_TO_GRANULES(hhdr->hb_sz);
+
+    /*
+     * As mentioned in `GC_set_hdr_marks`, all the bits are set instead of
+     * every `n`-th, thus the result should be adjusted.
+     */
+    GC_ASSERT((unsigned)lg != 0 && result % lg == 0);
+    result /= (unsigned)lg;
+  }
+#  endif
+  return result;
+}
+#endif /* !USE_MARK_BYTES */
+
+/*
+ * Below code will always be compiled (i.e., both in debug/release mode).
+ *
+ * But it won't be included in final binary if GC_dump_for_graph doesn't get
+ * called in escargot. So adding '-fdata-sections -ffunction-sections' into
+ * CFLAG is necessary when building bdwgc
+ */
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#  include <sys/resource.h>
+#endif
+
+struct Print_stats_escargot {
+  size_t number_of_blocks;
+  size_t total_bytes;
+  size_t marked_num;
+  size_t marked_bytes;
+};
+
+STATIC void
+GC_gather_information_for_escargot(struct GC_hblk_s *h, void *raw_pse)
+{
+  hdr *hhdr = HDR(h);
+  size_t bytes = hhdr->hb_sz;
+  struct Print_stats_escargot *pse;
+  unsigned n_marks = GC_n_set_marks(hhdr);
+
+  GC_ASSERT(hhdr->hb_n_marks == n_marks);
+
+  bytes += HBLKSIZE - 1;
+  bytes &= ~(HBLKSIZE - 1);
+
+  pse = (struct Print_stats_escargot *)raw_pse;
+  pse->number_of_blocks++;
+  pse->total_bytes += bytes;
+  pse->marked_num += n_marks;
+  pse->marked_bytes += (hhdr->hb_sz) * n_marks;
+}
+
+GC_API void GC_CALL
+GC_dump_for_graph(const char *log_file_name, const char *phase_name)
+{
+  struct Print_stats_escargot pstats;
+
+  pstats.number_of_blocks = 0;
+  pstats.total_bytes = 0;
+  pstats.marked_num = 0;
+  pstats.marked_bytes = 0;
+
+  GC_apply_to_all_blocks((GC_walk_hblk_fn)GC_gather_information_for_escargot,
+                         &pstats);
+
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+  struct rusage ru;
+  getrusage(RUSAGE_SELF, &ru);
+  size_t peak_rss = ru.ru_maxrss;
+
+  GC_printf("[%lu] %s : PeakRSS %zu KB, TotalHeap %lu KB, MarkedHeap %lu KB\n",
+            (unsigned long)GC_get_gc_no(), phase_name, peak_rss,
+            (unsigned long)pstats.total_bytes / 1024,
+            (unsigned long)pstats.marked_bytes / 1024);
+
+  FILE *fp = fopen(log_file_name, "a");
+  if (fp) {
+    fprintf(fp, "%5lu %9zu %9lu %9lu     # %s\n",
+            (unsigned long)GC_get_gc_no(), peak_rss,
+            (unsigned long)pstats.total_bytes / 1024,
+            (unsigned long)pstats.marked_bytes / 1024, phase_name);
+    fclose(fp);
+  }
+#endif
+}
 
 /*
  * Clear all `obj_link` pointers in the list of free objects `*flp`.
@@ -1039,6 +1119,21 @@ GC_do_enumerate_reachable_objects(struct hblk *hbp, void *ed_ptr)
 {
   const hdr *hhdr = HDR(hbp);
   ptr_t p, plim;
+
+  /* In conservative GC, enumeration of live objects is dangerous.
+   *
+   * When a false reference points a invalid object (which is not swept yet),
+   * that invalid object would be considered as valid object,
+   * and it can be reported as enumeration output,
+   * Then further manipulation of that object can cause error.
+   *
+   * This assert is to ensure that this kind of error never happens.
+   * If invalid object gets swept immediately after it becomes garbage,
+   * accidental retension of non-swept object can never be happen,
+   * therefore enumeration can always be safe.
+   */
+  GC_ASSERT(GC_obj_kinds[hhdr->hb_obj_kind].ok_eager_sweep);
+
   const struct enumerate_reachable_s *ped
       = (struct enumerate_reachable_s *)ed_ptr;
   size_t sz = hhdr->hb_sz;

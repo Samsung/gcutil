@@ -1574,6 +1574,12 @@ GC_init(void)
 #if defined(GWW_VDB) && !defined(KEEP_BACK_PTRS)
   GC_ASSERT(GC_bytes_allocd + GC_bytes_allocd_before_gc == 0);
 #endif
+
+  /* These variables are not initialized properly */
+  GC_heapsize = 0;
+#ifdef USE_MUNMAP
+  GC_unmapped_bytes = 0;
+#endif
 }
 
 GC_API void GC_CALL
@@ -2448,6 +2454,7 @@ GC_new_kind_inner(void **fl, GC_word descr, int adjust, int clear)
     GC_obj_kinds[result].ok_descriptor = descr;
     GC_obj_kinds[result].ok_relocate_descr = adjust != 0;
     GC_obj_kinds[result].ok_init = clear != 0;
+    GC_obj_kinds[result].ok_eager_sweep = FALSE;
 #ifdef ENABLE_DISCLAIM
     GC_obj_kinds[result].ok_mark_unconditionally = FALSE;
     GC_obj_kinds[result].ok_disclaim_proc = 0;
@@ -2465,6 +2472,17 @@ GC_new_kind(void **fl, GC_word descr, int adjust, int clear)
 
   LOCK();
   result = GC_new_kind_inner(fl, descr, adjust, clear);
+  UNLOCK();
+  return result;
+}
+
+GC_API unsigned GC_CALL
+GC_new_kind_enumerable(void **fl, GC_word descr, int adjust, int clear)
+{
+  unsigned result;
+  LOCK();
+  result = GC_new_kind_inner(fl, descr, adjust, clear);
+  GC_obj_kinds[result].ok_eager_sweep = TRUE;
   UNLOCK();
   return result;
 }
