@@ -2516,18 +2516,19 @@ GC_unix_mmap_get_mem(size_t bytes)
       (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
       GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0 /* offset */);
 #        else
-  while (last_addr < 1073741824L * 3) {
-    result = mmap(
-        MAKE_CPTR(last_addr), bytes,
-        (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
-        GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED, zero_fd, 0 /* offset */);
+  while (last_addr < 1073741824L * 4) {
+    result = mmap(MAKE_CPTR(last_addr), bytes,
+                  (PROT_READ | PROT_WRITE)
+                      | (GC_pages_executable ? PROT_EXEC : 0),
+                  GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd,
+                  0 /* offset */);
     if (result != MAP_FAILED) {
       break;
     }
     last_addr = last_addr + GC_page_size;
   }
 
-  if (last_addr > 1073741824L * 3) {
+  if (last_addr + bytes > 1073741824L * 4) {
     ABORT("Cannot allocate memory");
   }
 #        endif

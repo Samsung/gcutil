@@ -15,6 +15,10 @@
 
 #include "private/gc_priv.h"
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#  include <stdint.h>
+#endif
+
 #if !defined(PLATFORM_MACH_DEP) && !defined(SN_TARGET_PSP2)
 
 #  if defined(UNIX_LIKE) && !defined(STACK_NOT_SCANNED)
@@ -38,6 +42,12 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
 {
   volatile int dummy;
   volatile ptr_t context = 0;
+
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  volatile jmp_buf regs;
+  volatile jmp_buf regs_32_to_64_expand[2];
+#  endif
+
 #  if defined(EMSCRIPTEN) || defined(HAVE_BUILTIN_UNWIND_INIT)               \
       || defined(STACK_NOT_SCANNED) || (defined(NO_CRT) && defined(MSWIN32)) \
       || !defined(NO_UNDERSCORE_SETJMP)
@@ -135,7 +145,9 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
     RtlCaptureContext(&ctx);
 #    else
     /* Generic code. */
+#      if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
     jmp_buf regs;
+#      endif
 
     /*
      * `setjmp()` does not always clear all of the buffer.
@@ -152,6 +164,17 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
      */
     (void)_setjmp(regs);
 #      endif
+
+#      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    uint32_t *ptr = (uint32_t *)regs;
+    uint64_t *dst_ptr = (uint64_t *)regs_32_to_64_expand;
+    while ((size_t)ptr < (size_t)((char *)regs + sizeof(jmp_buf))) {
+      *dst_ptr = *ptr;
+      dst_ptr++;
+      ptr++;
+    }
+#      endif
+
 #    endif
   }
 #  endif
@@ -168,6 +191,13 @@ GC_with_callee_saves_pushed(GC_with_callee_saves_func fn, ptr_t arg)
    * look at them.
    */
   GC_noop1(COVERT_DATAFLOW(ADDR(&dummy)));
+
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  GC_noop1(COVERT_DATAFLOW(ADDR(&regs)));
+  GC_noop1(COVERT_DATAFLOW(ADDR(&regs_32_to_64_expand[0])));
+  GC_noop1(COVERT_DATAFLOW(ADDR(&regs_32_to_64_expand[1])));
+#  endif
+
 #  undef volatile_arg
 }
 
