@@ -3037,7 +3037,7 @@ EXTERN_C_BEGIN
 #endif
 
 #if defined(BASE_ATOMIC_OPS_EMULATED) || defined(PREFER_MMAP_PROT_NONE) \
-    || defined(REDIRECT_MALLOC) || !defined(THREADS)
+    || defined(REDIRECT_MALLOC) || (!defined(THREADS) && !defined(GC_THREAD_ISOLATE))
 /*
  * Note: `PREFER_MMAP_PROT_NONE` causes the collector to allocate heap via
  * `mmap(PROT_NONE)`, meaning pages are not initially accessible; this is not
