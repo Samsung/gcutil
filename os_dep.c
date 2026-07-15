@@ -3520,7 +3520,7 @@ static MAY_THREAD_LOCAL int clear_refs_fd = -1;
 #  define IS_NON_MPROTECT_VDB() (clear_refs_fd != -1)
 
 #elif defined(UFFDWP_VDB)
-static int uffdwp_fd = -1;
+static MAY_THREAD_LOCAL int uffdwp_fd = -1;
 #  define IS_NON_MPROTECT_VDB() (uffdwp_fd != -1)
 
 #else
