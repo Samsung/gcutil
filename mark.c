@@ -1025,7 +1025,11 @@ GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr,
 
   INIT_HDR_CACHE;
 
+#if defined(GC_DEBUG)
   const char *start = GC_USR_PTR_FROM_BASE(addr);
+#else
+  const char *start = (const char *)addr;
+#endif
   const char *end = ((char *)addr) + GC_size(addr);
 
   GC_word *iterator = (GC_word *)start;
@@ -1055,10 +1059,14 @@ GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
 
   INIT_HDR_CACHE;
 
-  char *start = GC_USR_PTR_FROM_BASE(addr);
+#if defined(GC_DEBUG)
+  const char *start = GC_USR_PTR_FROM_BASE(addr);
+#else
+  const char *start = (const char *)addr;
+#endif
   int i = 0;
 
-  i = proc(start, arr);
+  i = proc((/* no const */ void *)start, arr);
   for (; i < number_of_sub_pointer; i++) {
     if (arr[i].to)
       PUSH_CONTENTS((ptr_t)arr[i].to, mark_stack_ptr, mark_stack_limit,
