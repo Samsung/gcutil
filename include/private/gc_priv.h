@@ -4031,7 +4031,7 @@ GC_API_PRIV void GC_err_printf(const char *format, ...)
 GC_API_PRIV void GC_log_printf(const char *format, ...)
     GC_ATTR_FORMAT_PRINTF(1, 2);
 
-extern int GC_quiet; /*< visible outside currently */
+extern MAY_THREAD_LOCAL int GC_quiet; /*< visible outside currently */
 
 #ifndef GC_ANDROID_LOG
 #  define GC_PRINT_STATS_FLAG (GC_print_stats != 0)

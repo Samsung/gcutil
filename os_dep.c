@@ -81,7 +81,7 @@ STATIC MAY_THREAD_LOCAL GC_bool GC_pages_executable = TRUE;
  * A runtime flag indicating that `mprotect`-based VDB should be avoided.
  * Zero-initialized.
  */
-static GC_bool mprotect_vdb_disallowed = FALSE;
+static MAY_THREAD_LOCAL GC_bool mprotect_vdb_disallowed = FALSE;
 
 GC_API void GC_CALL
 GC_set_mprotect_vdb_allowed(int value)

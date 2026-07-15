@@ -55,7 +55,7 @@
  * Zero means no filter installed.  May be unused on some platforms.
  */
 /* FIXME: Add filter support for more platforms. */
-STATIC GC_has_static_roots_func GC_has_static_roots = 0;
+STATIC MAY_THREAD_LOCAL GC_has_static_roots_func GC_has_static_roots = 0;
 
 #ifdef ANY_MSWIN
 /*

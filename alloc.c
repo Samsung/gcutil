@@ -1499,7 +1499,7 @@ GC_gcollect_and_unmap(void)
   (void)GC_try_to_collect_general(GC_never_stop_func, TRUE);
 }
 
-STATIC GC_on_os_get_mem_proc GC_on_os_get_mem = 0;
+STATIC MAY_THREAD_LOCAL GC_on_os_get_mem_proc GC_on_os_get_mem = 0;
 
 GC_API void GC_CALL
 GC_set_on_os_get_mem(GC_on_os_get_mem_proc fn)
