@@ -14,6 +14,7 @@
  * modified is included with the above copyright notice.
  */
 
+#include "private/gc_alloc_ptrs.h"
 #include "private/gc_pmark.h"
 
 #include <limits.h>
@@ -39,11 +40,11 @@
 
 #ifdef THREADS
 #  if defined(SN_TARGET_PSP2)
-GC_INNER WapiMutex GC_allocate_ml_PSP2 = { 0, NULL };
+GC_INNER MAY_THREAD_LOCAL WapiMutex GC_allocate_ml_PSP2 = { 0, NULL };
 #  elif defined(GC_DEFN_ALLOCATE_ML) && !defined(USE_RWLOCK) \
       || defined(SN_TARGET_PS3)
 #    include <pthread.h>
-GC_INNER pthread_mutex_t GC_allocate_ml;
+GC_INNER MAY_THREAD_LOCAL pthread_mutex_t GC_allocate_ml;
 #  else
 /*
  * For other platforms with threads, the allocator lock and, possibly,
@@ -72,86 +73,86 @@ GC_INNER pthread_mutex_t GC_allocate_ml;
 __thread unsigned char GC_cancel_disable_count = 0;
 #endif
 
-struct _GC_arrays GC_arrays /* `= { 0 }` */;
+MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* `= { 0 }` */;
 
-GC_INNER unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
+GC_INNER MAY_THREAD_LOCAL unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
 
-GC_INNER unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
+GC_INNER MAY_THREAD_LOCAL unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
 
-ptr_t GC_stackbottom = NULL;
+ptr_t MAY_THREAD_LOCAL GC_stackbottom = NULL;
 
-int GC_dont_gc = FALSE;
+int MAY_THREAD_LOCAL GC_dont_gc = FALSE;
 
-int GC_dont_precollect = FALSE;
+int MAY_THREAD_LOCAL GC_dont_precollect = FALSE;
 
-int GC_quiet = 0;
+int MAY_THREAD_LOCAL GC_quiet = 0;
 
 #if !defined(NO_CLOCK) || !defined(SMALL_CONFIG)
-GC_INNER int GC_print_stats = 0;
+GC_INNER MAY_THREAD_LOCAL int GC_print_stats = 0;
 #endif
 
 #ifdef MAKE_BACK_GRAPH
 #  ifdef GC_PRINT_BACK_HEIGHT
-GC_INNER GC_bool GC_print_back_height = TRUE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_print_back_height = TRUE;
 #  else
-GC_INNER GC_bool GC_print_back_height = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_print_back_height = FALSE;
 #  endif
 #endif
 
 #ifndef NO_DEBUGGING
 #  ifdef GC_DUMP_REGULARLY
-GC_INNER GC_bool GC_dump_regularly = TRUE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_dump_regularly = TRUE;
 #  else
-GC_INNER GC_bool GC_dump_regularly = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_dump_regularly = FALSE;
 #  endif
 #endif
 
 #ifdef KEEP_BACK_PTRS
-GC_INNER long GC_backtraces = 0;
+GC_INNER MAY_THREAD_LOCAL long GC_backtraces = 0;
 #endif
 
 #ifdef FIND_LEAK
-int GC_find_leak = 1;
+int MAY_THREAD_LOCAL GC_find_leak = 1;
 #else
-int GC_find_leak = 0;
+int MAY_THREAD_LOCAL GC_find_leak = 0;
 #endif
 
 #if !defined(NO_FIND_LEAK) && !defined(SHORT_DBG_HDRS)
 #  ifdef GC_FINDLEAK_DELAY_FREE
-GC_INNER GC_bool GC_findleak_delay_free = TRUE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free = TRUE;
 #  else
-GC_INNER GC_bool GC_findleak_delay_free = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_findleak_delay_free = FALSE;
 #  endif
 #endif /* !NO_FIND_LEAK && !SHORT_DBG_HDRS */
 
 #ifndef NO_ALL_INTERIOR_POINTERS
 #  ifdef ALL_INTERIOR_POINTERS
-int GC_all_interior_pointers = 1;
+MAY_THREAD_LOCAL int GC_all_interior_pointers = 1;
 #  else
-int GC_all_interior_pointers = 0;
+MAY_THREAD_LOCAL int GC_all_interior_pointers = 0;
 #  endif
 #endif
 
 #ifdef FINALIZE_ON_DEMAND
-int GC_finalize_on_demand = 1;
+MAY_THREAD_LOCAL int GC_finalize_on_demand = 1;
 #else
-int GC_finalize_on_demand = 0;
+MAY_THREAD_LOCAL int GC_finalize_on_demand = 0;
 #endif
 
 #ifdef JAVA_FINALIZATION
-int GC_java_finalization = 1;
+MAY_THREAD_LOCAL int GC_java_finalization = 1;
 #else
-int GC_java_finalization = 0;
+MAY_THREAD_LOCAL int GC_java_finalization = 0;
 #endif
 
 /* All accesses to it should be synchronized to avoid data race. */
-GC_finalizer_notifier_proc GC_finalizer_notifier
+MAY_THREAD_LOCAL GC_finalizer_notifier_proc GC_finalizer_notifier
     = (GC_finalizer_notifier_proc)0;
 
 #ifdef GC_FORCE_UNMAP_ON_GCOLLECT
-GC_INNER GC_bool GC_force_unmap_on_gcollect = TRUE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_force_unmap_on_gcollect = TRUE;
 #else
-GC_INNER GC_bool GC_force_unmap_on_gcollect = FALSE;
+GC_INNER MAY_THREAD_LOCAL GC_bool GC_force_unmap_on_gcollect = FALSE;
 #endif
 
 #ifndef GC_LARGE_ALLOC_WARN_INTERVAL
@@ -159,7 +160,8 @@ GC_INNER GC_bool GC_force_unmap_on_gcollect = FALSE;
 #endif
 
 #ifndef NO_BLACK_LISTING
-GC_INNER long GC_large_alloc_warn_interval = GC_LARGE_ALLOC_WARN_INTERVAL;
+GC_INNER MAY_THREAD_LOCAL long GC_large_alloc_warn_interval
+    = GC_LARGE_ALLOC_WARN_INTERVAL;
 #endif
 
 STATIC void *GC_CALLBACK
@@ -170,13 +172,13 @@ GC_default_oom_fn(size_t bytes_requested)
 }
 
 /* All accesses to it should be synchronized to avoid data race. */
-GC_oom_func GC_oom_fn = GC_default_oom_fn;
+MAY_THREAD_LOCAL GC_oom_func GC_oom_fn = GC_default_oom_fn;
 
 #ifdef CAN_HANDLE_FORK
 #  ifdef HANDLE_FORK
-GC_INNER int GC_handle_fork = 1;
+GC_INNER MAY_THREAD_LOCAL int GC_handle_fork = 1;
 #  else
-GC_INNER int GC_handle_fork = FALSE;
+GC_INNER MAY_THREAD_LOCAL int GC_handle_fork = FALSE;
 #  endif
 
 #elif !defined(HAVE_NO_FORK)
@@ -333,11 +335,11 @@ static unsigned
 next_random_no(void)
 {
 #    ifdef AO_HAVE_fetch_and_add1
-  static volatile AO_t random_no;
+  static MAY_THREAD_LOCAL volatile AO_t random_no;
 
   return (unsigned)AO_fetch_and_add1(&random_no) % 13;
 #    else
-  static unsigned random_no = 0;
+  static MAY_THREAD_LOCAL unsigned random_no = 0;
 
   return (random_no++) % 13;
 #    endif
@@ -805,7 +807,7 @@ GC_is_init_called(void)
 
 #if defined(GC_WIN32_THREADS) \
     && ((defined(MSWIN32) && !defined(CONSOLE_LOG)) || defined(MSWINCE))
-GC_INNER CRITICAL_SECTION GC_write_cs;
+GC_INNER MAY_THREAD_LOCAL CRITICAL_SECTION GC_write_cs;
 #endif
 
 #ifndef DONT_USE_ATEXIT
@@ -841,7 +843,7 @@ looping_handler(int sig)
   }
 }
 
-static GC_bool installed_looping_handler = FALSE;
+static MAY_THREAD_LOCAL GC_bool installed_looping_handler = FALSE;
 
 static void
 maybe_install_looping_handler(void)
@@ -870,9 +872,9 @@ maybe_install_looping_handler(void)
 #if !defined(OS2) && !defined(GC_ANDROID_LOG) && !defined(NN_PLATFORM_CTR) \
     && !defined(NINTENDO_SWITCH)                                           \
     && (!defined(MSWIN32) || defined(CONSOLE_LOG)) && !defined(MSWINCE)
-STATIC int GC_stdout = GC_DEFAULT_STDOUT_FD;
-STATIC int GC_stderr = GC_DEFAULT_STDERR_FD;
-STATIC int GC_log = GC_DEFAULT_STDERR_FD;
+STATIC MAY_THREAD_LOCAL int GC_stdout = GC_DEFAULT_STDOUT_FD;
+STATIC MAY_THREAD_LOCAL int GC_stderr = GC_DEFAULT_STDERR_FD;
+STATIC MAY_THREAD_LOCAL int GC_log = GC_DEFAULT_STDERR_FD;
 
 #  ifndef MSWIN32
 GC_API void GC_CALL
@@ -914,9 +916,9 @@ callee_saves_pushed_dummy_fn(ptr_t data, void *context)
 #endif
 
 #ifdef MANUAL_VDB
-static GC_bool manual_vdb_allowed = TRUE;
+static MAY_THREAD_LOCAL GC_bool manual_vdb_allowed = TRUE;
 #else
-static GC_bool manual_vdb_allowed = FALSE;
+static MAY_THREAD_LOCAL GC_bool manual_vdb_allowed = FALSE;
 #endif
 
 GC_API void GC_CALL
@@ -1042,12 +1044,26 @@ GC_init(void)
     return;
 #ifdef REDIRECT_MALLOC
   {
-    static GC_bool init_started = FALSE;
+    static MAY_THREAD_LOCAL GC_bool init_started = FALSE;
 
     if (init_started)
       ABORT("Redirected malloc() called during GC init");
     init_started = TRUE;
   }
+#endif
+
+  GC_objfreelist_ptr = GC_objfreelist;
+  GC_aobjfreelist_ptr = GC_aobjfreelist;
+  GC_uobjfreelist_ptr = GC_uobjfreelist;
+#ifdef GC_ATOMIC_UNCOLLECTABLE
+  GC_auobjfreelist_ptr = GC_auobjfreelist;
+#endif
+
+  GC_obj_kinds[0].ok_freelist = &GC_aobjfreelist[0];
+  GC_obj_kinds[1].ok_freelist = &GC_objfreelist[0];
+  GC_obj_kinds[2].ok_freelist = &GC_uobjfreelist[0];
+#ifdef GC_ATOMIC_UNCOLLECTABLE
+  GC_obj_kinds[3].ok_freelist = &GC_auobjfreelist[0];
 #endif
 
 #ifdef GC_INITIAL_HEAP_SIZE
@@ -1576,7 +1592,6 @@ GC_init(void)
 #endif
 
   /* These variables are not initialized properly */
-  GC_heapsize = 0;
 #ifdef USE_MUNMAP
   GC_unmapped_bytes = 0;
 #endif
@@ -1691,7 +1706,7 @@ GC_deinit(void)
 
 #if (defined(MSWIN32) && !defined(CONSOLE_LOG)) || defined(MSWINCE)
 
-STATIC HANDLE GC_log = 0;
+STATIC MAY_THREAD_LOCAL HANDLE GC_log = 0;
 
 #  ifdef THREADS
 #    if defined(PARALLEL_MARK) && !defined(GC_ALWAYS_MULTITHREADED)
@@ -1863,7 +1878,7 @@ GC_write(const char *buf, size_t len)
   DWORD written;
 #  if defined(THREADS) && defined(GC_ASSERTIONS)
   /* This is to prevent infinite recursion at abort. */
-  static GC_bool inside_write = FALSE;
+  static MAY_THREAD_LOCAL GC_bool inside_write = FALSE;
 
   if (inside_write)
     return -1;
@@ -1919,9 +1934,9 @@ GC_write(const char *buf, size_t len)
 #  define WRITE(f, buf, len) GC_write(buf, len)
 
 #elif defined(OS2)
-STATIC FILE *GC_stdout = NULL;
-STATIC FILE *GC_stderr = NULL;
-STATIC FILE *GC_log = NULL;
+STATIC MAY_THREAD_LOCAL FILE *GC_stdout = NULL;
+STATIC MAY_THREAD_LOCAL FILE *GC_stderr = NULL;
+STATIC MAY_THREAD_LOCAL FILE *GC_log = NULL;
 
 /* Initialize `GC_log` (and the friends) passed to `GC_write()`. */
 STATIC void
@@ -2164,7 +2179,8 @@ GC_default_warn_proc(const char *msg, GC_uintptr_t arg)
   GC_warn_printf(msg, arg);
 }
 
-GC_INNER GC_warn_proc GC_current_warn_proc = GC_default_warn_proc;
+GC_INNER MAY_THREAD_LOCAL GC_warn_proc GC_current_warn_proc
+    = GC_default_warn_proc;
 
 GC_API void GC_CALLBACK
 GC_ignore_warn_proc(const char *msg, GC_uintptr_t arg)
@@ -2261,7 +2277,7 @@ GC_default_on_abort(const char *msg)
 }
 
 #ifndef SMALL_CONFIG
-GC_abort_func GC_on_abort = GC_default_on_abort;
+MAY_THREAD_LOCAL GC_abort_func GC_on_abort = GC_default_on_abort;
 #endif
 
 GC_API void GC_CALL
