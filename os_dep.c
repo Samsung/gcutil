@@ -2501,15 +2501,42 @@ GC_unix_mmap_get_mem(size_t bytes)
   GC_ASSERT(GC_page_size != 0);
   if (bytes & (GC_page_size - 1))
     ABORT("Bad GET_MEM arg");
-  /*
-   * Note: it is essential for CHERI to have only address part in
-   * `last_addr` without metadata (thus the variable is of `word` type
-   * intentionally), otherwise `mmap()` fails setting `errno` to `EPROT`.
-   */
+    /*
+     * Note: it is essential for CHERI to have only address part in
+     * `last_addr` without metadata (thus the variable is of `word` type
+     * intentionally), otherwise `mmap()` fails setting `errno` to `EPROT`.
+     */
+#      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (last_addr == 0) {
+    last_addr = (word)0x1000;
+  }
+#        if defined(MAP_32BIT)
+  result = mmap(
+      MAKE_CPTR(last_addr), bytes,
+      (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
+      GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0 /* offset */);
+#        else
+  while (last_addr < 1073741824L * 3) {
+    result = mmap(
+        MAKE_CPTR(last_addr), bytes,
+        (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
+        GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED, zero_fd, 0 /* offset */);
+    if (result != MAP_FAILED) {
+      break;
+    }
+    last_addr = last_addr + GC_page_size;
+  }
+
+  if (last_addr > 1073741824L * 3) {
+    ABORT("Cannot allocate memory");
+  }
+#        endif
+#      else
   result
       = mmap(MAKE_CPTR(last_addr), bytes,
              (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
              GC_MMAP_FLAGS | OPT_MAP_ANON, zero_fd, 0 /* `offset` */);
+#      endif
 #      undef IGNORE_PAGES_EXECUTABLE
 
   if (UNLIKELY(MAP_FAILED == result)) {
