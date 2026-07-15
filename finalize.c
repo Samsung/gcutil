@@ -994,14 +994,8 @@ GC_check_finalizer_nested(void)
 {
   unsigned nesting_level = GC_finalizer_nested;
   if (nesting_level) {
-    /*
-     * We are inside another `GC_invoke_finalizers()`.  Skip some
-     * implicitly-called `GC_invoke_finalizers()` depending on the
-     * nesting (recursion) level.
-     */
-    if ((unsigned)(++GC_finalizer_skipped) < (1U << nesting_level))
-      return NULL;
-    GC_finalizer_skipped = 0;
+    // disable nested call
+    return NULL;
   }
   GC_finalizer_nested = (unsigned char)(nesting_level + 1);
   return &GC_finalizer_nested;
