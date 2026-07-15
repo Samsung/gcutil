@@ -18,9 +18,9 @@
 #include "private/gc_priv.h"
 
 #ifdef GC_USE_ENTIRE_HEAP
-int GC_use_entire_heap = TRUE;
+MAY_THREAD_LOCAL int GC_use_entire_heap = TRUE;
 #else
-int GC_use_entire_heap = FALSE;
+MAY_THREAD_LOCAL int GC_use_entire_heap = FALSE;
 #endif
 
 /*
@@ -58,7 +58,7 @@ int GC_use_entire_heap = FALSE;
 #ifndef GC_GCJ_SUPPORT
 STATIC
 #endif
-struct hblk *GC_hblkfreelist[N_HBLK_FLS + 1] = { NULL };
+MAY_THREAD_LOCAL struct hblk *GC_hblkfreelist[N_HBLK_FLS + 1] = { NULL };
 
 GC_API void GC_CALL
 GC_iterate_free_hblks(GC_walk_free_blk_fn fn, void *client_data)
@@ -78,7 +78,7 @@ GC_iterate_free_hblks(GC_walk_free_blk_fn fn, void *client_data)
 #ifndef GC_GCJ_SUPPORT
 STATIC
 #endif
-word GC_free_bytes[N_HBLK_FLS + 1] = { 0 };
+MAY_THREAD_LOCAL word GC_free_bytes[N_HBLK_FLS + 1] = { 0 };
 
 #ifndef GC_NO_DEINIT
 GC_INNER void

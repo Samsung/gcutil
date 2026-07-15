@@ -27,7 +27,7 @@
  */
 
 /* Register dynamic library data segments. */
-int GC_no_dls = 0;
+MAY_THREAD_LOCAL int GC_no_dls = 0;
 
 #if !defined(NO_DEBUGGING) || defined(GC_ASSERTIONS)
 GC_INNER word
@@ -935,7 +935,7 @@ GC_push_regs_and_stack(ptr_t cold_gc_frame)
 
 #endif /* !STACK_NOT_SCANNED */
 
-STATIC GC_mark_stack_func GC_mark_stack_func_proc = 0;
+STATIC MAY_THREAD_LOCAL GC_mark_stack_func GC_mark_stack_func_proc = 0;
 GC_API void GC_CALL
 GC_register_mark_stack_func(GC_mark_stack_func func)
 {
@@ -963,7 +963,7 @@ GC_custom_push_regs_and_stack(GC_custom_push_proc fn, void *client_data,
   UNUSED_ARG(cold_gc_frame);
 }
 
-GC_INNER void (*GC_push_typed_structures)(void) = 0;
+GC_INNER MAY_THREAD_LOCAL void (*GC_push_typed_structures)(void) = 0;
 
 GC_INNER void
 GC_cond_register_dynamic_libraries(void)

@@ -71,25 +71,25 @@ GC_noop1_ptr(volatile void *p)
  * mark descriptors.  Note: `GC_obj_kinds[NORMAL].ok_descriptor` is
  * adjusted in `GC_init()` for `EXTRA_BYTES`.
  */
-GC_INNER struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
+GC_INNER MAY_THREAD_LOCAL struct obj_kind GC_obj_kinds[MAXOBJKINDS] = {
   /* `PTRFREE` */
-  { &GC_aobjfreelist[0], 0 /*< filled in dynamically */,
+  { 0, 0 /*< filled in dynamically */,
     /* `0 |` */ GC_DS_LENGTH, FALSE,
     FALSE OK_EAGER_SWEEP_INITZ
         /*, */ OK_DISCLAIM_INITZ },
   /* `NORMAL` */
-  { &GC_objfreelist[0], 0,
+  { 0, 0,
     /* `0 |` */ GC_DS_LENGTH, TRUE /*< add length to descriptor template */,
     TRUE OK_EAGER_SWEEP_INITZ
         /*, */ OK_DISCLAIM_INITZ },
   /* `UNCOLLECTABLE` */
-  { &GC_uobjfreelist[0], 0,
+  { 0, 0,
     /* `0 |` */ GC_DS_LENGTH, TRUE /*< add length to descriptor template */,
     TRUE OK_EAGER_SWEEP_INITZ
         /*, */ OK_DISCLAIM_INITZ },
 #ifdef GC_ATOMIC_UNCOLLECTABLE
   /* `AUNCOLLECTABLE` */
-  { &GC_auobjfreelist[0], 0,
+  { 0, 0,
     /* `0 |` */ GC_DS_LENGTH, FALSE,
     FALSE OK_EAGER_SWEEP_INITZ
         /*, */ OK_DISCLAIM_INITZ },
@@ -131,7 +131,7 @@ GC_reset_obj_kinds(void)
  * The number of dirty pages we marked from, excluding pointer-free pages,
  * etc.  Used for logging only.
  */
-STATIC word GC_n_rescuing_pages = 0;
+STATIC MAY_THREAD_LOCAL word GC_n_rescuing_pages = 0;
 #endif
 
 GC_API void GC_CALL
@@ -397,7 +397,7 @@ push_roots_and_advance(GC_bool push_all, ptr_t cold_gc_frame)
     GC_mark_state = MS_ROOTS_PUSHED;
 }
 
-STATIC GC_on_mark_stack_empty_proc GC_on_mark_stack_empty = 0;
+STATIC MAY_THREAD_LOCAL GC_on_mark_stack_empty_proc GC_on_mark_stack_empty = 0;
 
 GC_API void GC_CALL
 GC_set_on_mark_stack_empty(GC_on_mark_stack_empty_proc fn)
@@ -630,7 +630,7 @@ handle_ex:
   GC_reset_fault_handler();
 #  endif
   {
-    static word warned_gc_no;
+    static MAY_THREAD_LOCAL word warned_gc_no;
 
     /* Report caught `ACCESS_VIOLATION`, once per collection. */
     if (warned_gc_no != GC_gc_no) {
@@ -1078,19 +1078,19 @@ GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
 #ifdef PARALLEL_MARK
 
 /* Note: this is protected by the mark lock. */
-STATIC GC_bool GC_help_wanted = FALSE;
+STATIC MAY_THREAD_LOCAL GC_bool GC_help_wanted = FALSE;
 
 /* Number of running helpers.  Protected by the mark lock. */
-STATIC unsigned GC_helper_count = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_helper_count = 0;
 
 /*
  * Number of active helpers.  May increase and decrease within each
  * mark cycle; but once it returns to zero, it stays for the cycle.
  * Protected by the mark lock.
  */
-STATIC unsigned GC_active_count = 0;
+STATIC MAY_THREAD_LOCAL unsigned GC_active_count = 0;
 
-GC_INNER GC_signed_word GC_fl_builder_count = 0;
+GC_INNER MAY_THREAD_LOCAL GC_signed_word GC_fl_builder_count = 0;
 
 #  ifdef LINT2
 #    define LOCAL_MARK_STACK_SIZE (HBLKSIZE / 8)

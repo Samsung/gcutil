@@ -4604,7 +4604,7 @@ GC_INNER void GC_wait_for_reclaim(void);
  * Also, together with the mark lock, it is used as a semaphore during
  * marker threads startup.  Protected by the mark lock.
  */
-GC_EXTERN GC_signed_word GC_fl_builder_count;
+GC_EXTERN MAY_THREAD_LOCAL GC_signed_word GC_fl_builder_count;
 
 GC_INNER void GC_notify_all_marker(void);
 GC_INNER void GC_wait_marker(void);
