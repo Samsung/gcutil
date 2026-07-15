@@ -39,12 +39,12 @@ extern "C" {
 #  endif
 #endif
 
-GC_API_PRIV void **GC_APIVAR_CONST GC_objfreelist_ptr;
-GC_API_PRIV void **GC_APIVAR_CONST GC_aobjfreelist_ptr;
-GC_API_PRIV void **GC_APIVAR_CONST GC_uobjfreelist_ptr;
+GC_API_PRIV GC_MAY_THREAD_LOCAL void **GC_objfreelist_ptr;
+GC_API_PRIV GC_MAY_THREAD_LOCAL void **GC_aobjfreelist_ptr;
+GC_API_PRIV GC_MAY_THREAD_LOCAL void **GC_uobjfreelist_ptr;
 
 #ifdef GC_ATOMIC_UNCOLLECTABLE
-GC_API_PRIV void **GC_APIVAR_CONST GC_auobjfreelist_ptr;
+GC_API_PRIV GC_MAY_THREAD_LOCAL void **GC_auobjfreelist_ptr;
 #endif
 
 /*

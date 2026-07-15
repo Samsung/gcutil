@@ -147,8 +147,8 @@ typedef struct GC_ms_entry *(GC_CALLBACK *GC_mark_proc)(
  * object is larger than `GC_least_plausible_heap_addr` and less than
  * `GC_greatest_plausible_heap_addr`.
  */
-GC_API void *GC_least_plausible_heap_addr;
-GC_API void *GC_greatest_plausible_heap_addr;
+GC_API GC_MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr;
+GC_API GC_MAY_THREAD_LOCAL void *GC_greatest_plausible_heap_addr;
 
 /**
  * Specify the pointer address mask.  Works only if the collector is
@@ -236,7 +236,7 @@ GC_API GC_ATTR_CONST size_t GC_CALL GC_get_debug_header_size(void);
  * accept `const` together with `deprecated` or `dllimport` attributes,
  * so the symbol is exported as a non-constant one.
  */
-GC_API GC_ATTR_DEPRECATED
+GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED
 #ifdef GC_BUILD
     const
 #endif
