@@ -2746,10 +2746,10 @@ GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 GC_EXTERN MAY_THREAD_LOCAL unsigned GC_n_kinds;
 
 /* May mean the allocation granularity size, not page size. */
-GC_EXTERN MAY_THREAD_LOCAL size_t GC_page_size;
+GC_EXTERN size_t GC_page_size;
 
 #ifdef REAL_PAGESIZE_NEEDED
-GC_EXTERN MAY_THREAD_LOCAL size_t GC_real_page_size;
+GC_EXTERN size_t GC_real_page_size;
 #else
 #  define GC_real_page_size GC_page_size
 #endif

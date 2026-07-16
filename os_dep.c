@@ -730,9 +730,9 @@ struct o32_obj {
 
 #endif /* OS2 */
 
-GC_INNER MAY_THREAD_LOCAL size_t GC_page_size = 0;
+GC_INNER size_t GC_page_size = 0;
 #ifdef REAL_PAGESIZE_NEEDED
-GC_INNER MAY_THREAD_LOCAL size_t GC_real_page_size = 0;
+GC_INNER size_t GC_real_page_size = 0;
 #endif
 
 #ifdef SOFT_VDB
