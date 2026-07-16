@@ -3924,6 +3924,22 @@ GC_API_PATCHABLE void GC_dirty_inner(const void *p);
  */
 GC_INNER GC_bool GC_dirty_init(void);
 
+#  ifdef UFFDWP_VDB
+/*
+ * Release whatever `GC_dirty_init()` allocated for the calling thread
+ * (currently: stop its `userfaultfd` monitor thread and close its file
+ * descriptors).  Must be called before a per-thread GC instance goes away
+ * (see `GC_deinit()`), or the monitor thread is leaked, blocked forever in
+ * `poll()` on behalf of a thread that no longer exists.  A no-op if this
+ * thread's GC instance never had incremental mode on, or is using a VDB
+ * implementation other than `UFFDWP_VDB` (none of which own a background
+ * thread that needs stopping).
+ */
+GC_INNER void GC_dirty_deinit(void);
+#  else
+#    define GC_dirty_deinit() (void)0
+#  endif
+
 /*
  * Retrieve system dirty bits for the heap to a local buffer (unless
  * `output_unneeded`).  The caller should set `output_unneeded` to indicate

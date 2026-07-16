@@ -4673,6 +4673,7 @@ GC_soft_read_dirty(GC_bool output_unneeded)
 
 #ifdef UFFDWP_VDB
 #  include <linux/userfaultfd.h>
+#  include <poll.h>
 #  include <sys/ioctl.h>
 #  include <sys/syscall.h>
 
@@ -4683,12 +4684,30 @@ GC_soft_read_dirty(GC_bool output_unneeded)
  * thread's own (uninitialized) copies, not the owning thread's, so the
  * values it needs must be captured explicitly by the owning thread and
  * handed over via the `pthread_create()` argument instead.
+ *
+ * The monitor thread is also the only one that ever closes `fd` (the
+ * `userfaultfd` descriptor): the owning thread only ever asks it to stop
+ * (via `stop_fd`, the read end of a pipe) and never touches `fd` itself
+ * past thread creation, so there is no close()-vs-close() race on the
+ * same descriptor number.
  */
 typedef struct {
   int fd;
+  int stop_fd;
   word *dirty_pages;
   size_t page_size;
 } uffdwp_monitor_ctx;
+
+/*
+ * Write end of the shutdown pipe for the current thread's monitor thread,
+ * or -1 if no monitor thread is running.  Closing it wakes the monitor
+ * thread's `poll()` (see `uffdwp_monitor_thread()`) with `POLLHUP`; this
+ * cannot be done by closing `uffdwp_fd` directly instead, since a blocked
+ * `read()` on `userfaultfd` is not woken by another thread closing the
+ * same descriptor (the kernel keeps the underlying file alive until the
+ * blocked syscall itself releases its reference).
+ */
+static MAY_THREAD_LOCAL int uffdwp_stop_wfd = -1;
 
 /* Open the `userfaultfd` file descriptor. */
 static GC_bool
@@ -4763,6 +4782,7 @@ uffdwp_monitor_thread(void *arg)
    */
   const uffdwp_monitor_ctx *ctx = (const uffdwp_monitor_ctx *)arg;
   const int fd = ctx->fd;
+  const int stop_fd = ctx->stop_fd;
   word *const dirty_pages = ctx->dirty_pages;
   const size_t page_size = ctx->page_size;
 
@@ -4773,8 +4793,31 @@ uffdwp_monitor_thread(void *arg)
 
   for (;;) {
     struct uffd_msg msg_buf[UFFDWP_MSG_BATCH_SIZE];
+    struct pollfd pfd[2];
     ssize_t res;
     size_t i, n;
+
+    /*
+     * Wait for either a write-protect fault event or a shutdown request
+     * (the owning thread closing its end of the stop pipe, see
+     * `GC_dirty_deinit()`); `stop_fd` is checked first below so a pending
+     * shutdown is not missed even if `fd` also happens to be readable.
+     */
+    pfd[0].fd = stop_fd;
+    pfd[0].events = POLLIN;
+    pfd[0].revents = 0;
+    pfd[1].fd = fd;
+    pfd[1].events = POLLIN;
+    pfd[1].revents = 0;
+    if (poll(pfd, 2, -1) == -1) {
+      if (errno == EAGAIN || errno == EINTR)
+        continue;
+      ABORT_ARG1("userfaultfd monitor poll failed", ": errno= %d", errno);
+    }
+    if (pfd[0].revents != 0)
+      break; /*< the owning thread shut down; stop and clean up below */
+    if (pfd[1].revents == 0)
+      continue;
 
     /* Wait for and get write-protect fault events. */
     res = PROC_READ(fd, msg_buf, sizeof(msg_buf));
@@ -4824,6 +4867,14 @@ uffdwp_monitor_thread(void *arg)
       uffdwp_write_protect(fd, h, page_size, TRUE);
     }
   }
+
+  /*
+   * Only this thread ever closes `fd`/`stop_fd` (see the comment on
+   * `uffdwp_monitor_ctx`), so no lock or coordination is needed here.
+   */
+  close(fd);
+  close(stop_fd);
+  return NULL;
 }
 
 #  ifdef CAN_HANDLE_FORK
@@ -4843,6 +4894,17 @@ GC_dirty_update_child(void)
    * kernel when closing the file descriptor.
    */
   close(uffdwp_fd);
+  /*
+   * The monitor thread itself does not survive `fork()` (only the calling
+   * thread does), so nothing will ever close its inherited copy of the
+   * `userfaultfd` descriptor above or of the stop pipe's read end; only
+   * the write end is reachable here (via TLS), so that is all that can be
+   * closed on this side.
+   */
+  if (uffdwp_stop_wfd != -1) {
+    close(uffdwp_stop_wfd);
+    uffdwp_stop_wfd = -1;
+  }
   /* TODO: Re-enable incremental mode in child. */
   GC_uffdwp_registered_sects = 0;
   uffdwp_fd = -1;
@@ -4878,26 +4940,73 @@ GC_dirty_init(void)
      * The monitor thread cannot see this (owning) thread's TLS state, so
      * hand it a snapshot explicitly; see the comment on `uffdwp_monitor_ctx`.
      */
-    uffdwp_monitor_ctx *ctx
-        = (uffdwp_monitor_ctx *)malloc(sizeof(uffdwp_monitor_ctx));
+    uffdwp_monitor_ctx *ctx;
+    int stop_pipe[2];
 
+    if (pipe(stop_pipe) == -1) {
+      close(uffdwp_fd);
+      uffdwp_fd = -1;
+      return FALSE;
+    }
+    if (fcntl(stop_pipe[0], F_SETFD, FD_CLOEXEC) == -1
+        || fcntl(stop_pipe[1], F_SETFD, FD_CLOEXEC) == -1) {
+      close(stop_pipe[0]);
+      close(stop_pipe[1]);
+      close(uffdwp_fd);
+      uffdwp_fd = -1;
+      return FALSE;
+    }
+    ctx = (uffdwp_monitor_ctx *)malloc(sizeof(uffdwp_monitor_ctx));
     if (NULL == ctx) {
+      close(stop_pipe[0]);
+      close(stop_pipe[1]);
       close(uffdwp_fd);
       uffdwp_fd = -1;
       return FALSE;
     }
     ctx->fd = uffdwp_fd;
+    ctx->stop_fd = stop_pipe[0];
     ctx->dirty_pages = (word *)GC_dirty_pages;
     ctx->page_size = GC_page_size;
     if (UNLIKELY(!create_detached_thread(uffdwp_monitor_thread, ctx))) {
       WARN("Failed to create userfaultfd monitor thread\n", 0);
       free(ctx);
+      close(stop_pipe[0]);
+      close(stop_pipe[1]);
       close(uffdwp_fd);
       uffdwp_fd = -1;
       return FALSE;
     }
+    uffdwp_stop_wfd = stop_pipe[1];
   }
   return TRUE; /*< success */
+}
+
+/*
+ * Stop this thread's `userfaultfd` monitor thread (if any) and release the
+ * resources `GC_dirty_init()`/`uffdwp_dirty_init()` allocated for it.  Must
+ * be called (from `GC_deinit()`) before a per-thread GC instance goes away
+ * under `GC_THREAD_ISOLATE`, otherwise the monitor thread is leaked: it
+ * would keep blocking in `poll()` on a `userfaultfd` descriptor whose
+ * owning thread no longer exists.
+ */
+GC_INNER void
+GC_dirty_deinit(void)
+{
+  if (-1 == uffdwp_fd) {
+    /* The GC incremental mode is off, or uses `mprotect` instead. */
+    return;
+  }
+  GC_ASSERT(uffdwp_stop_wfd != -1);
+  /*
+   * Closing the write end wakes the monitor thread's `poll()` with
+   * `POLLHUP` on the read end; the monitor thread closes both `fd` and
+   * `stop_fd` itself once it observes this (see `uffdwp_monitor_thread()`),
+   * so this thread must not close `uffdwp_fd` here.
+   */
+  close(uffdwp_stop_wfd);
+  uffdwp_stop_wfd = -1;
+  uffdwp_fd = -1;
 }
 
 /* Lazily register new heap sections. */

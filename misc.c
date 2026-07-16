@@ -1767,6 +1767,15 @@ GC_deinit(void)
   if (!GC_is_initialized)
     return;
 
+#  ifndef GC_DISABLE_INCREMENTAL
+  /*
+   * Stop this thread's VDB monitor thread (if any) before `GC_arrays` (and
+   * thus `GC_incremental`) is cleared below, so under `GC_THREAD_ISOLATE`
+   * it does not outlive the thread whose incremental GC it was serving.
+   */
+  GC_dirty_deinit();
+#  endif
+
   BZERO(&GC_arrays, sizeof(GC_arrays)); /*< clears GC_is_initialized */
   GC_gc_no = 0;
   GC_dont_gc = FALSE;
