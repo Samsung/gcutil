@@ -184,6 +184,7 @@ typedef enum {
   GC_EVENT_START, /*< start collection */
   GC_EVENT_MARK_START,
   GC_EVENT_MARK_END,
+  GC_EVENT_MARK_ABANDON,
   GC_EVENT_RECLAIM_START,
   GC_EVENT_RECLAIM_END,
   GC_EVENT_END,              /*< end collection */
