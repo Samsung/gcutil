@@ -1077,8 +1077,17 @@ GC_init(void)
   word initial_heap_sz;
   IF_CANCEL(int cancel_state;)
 
+#if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
+    || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+  // we should test `GC_arrays_instance._is_initialized` here.
+  // GC_tls_base_address() returns wrong value since there was no tls access
+  // before.
+  if (LIKELY(GC_arrays_instance._is_initialized))
+    return;
+#else
   if (LIKELY(GC_is_initialized))
     return;
+#endif
 #ifdef REDIRECT_MALLOC
   {
     static MAY_THREAD_LOCAL GC_bool init_started = FALSE;
