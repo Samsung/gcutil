@@ -16,6 +16,7 @@
 
 #include "private/gc_alloc_ptrs.h"
 #include "private/gc_pmark.h"
+#include "private/vdb_isolate.h"
 
 #include <limits.h>
 #include <stdarg.h>
@@ -1795,6 +1796,15 @@ GC_deinit(void)
    */
   GC_dirty_deinit();
 #  endif
+
+  /*
+   * Remove this thread's own heap sections from the cross-isolate VDB
+   * registries (vdb_isolate.c) before GC_heap_sects/GC_n_heap_sects, which
+   * identify them, are cleared below -- otherwise, under
+   * GC_THREAD_ISOLATE, those registries only ever grow across repeated
+   * thread create/destroy cycles.
+   */
+  GC_isolate_vdb_deinit();
 
   BZERO(&GC_arrays, sizeof(GC_arrays)); /*< clears GC_is_initialized */
   GC_gc_no = 0;

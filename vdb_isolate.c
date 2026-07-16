@@ -270,6 +270,52 @@ mark_range_locked(ptr_t start, ptr_t end, GC_bool committed)
   }
 }
 
+/*
+ * Removes [start, end) from the registry entirely. Same interval-overlap
+ * cases as mark_range_locked() above, except the overlapping portion is
+ * dropped rather than relabeled; see GC_isolate_vdb_deinit(), the only
+ * caller. Must be called with range_lock held.
+ */
+static void
+delete_range_locked(ptr_t start, ptr_t end)
+{
+  size_t i;
+
+  for (i = 0; i < range_count; i++) {
+    ptr_t rs = range_registry[i].start;
+    ptr_t re = range_registry[i].end;
+
+    if (re <= start || rs >= end)
+      continue; /*< no overlap */
+
+    if (rs < start && re > end) {
+      /* [start, end) strictly inside this entry: keep both remainders. */
+      range_registry[i].end = start; /*< left remainder: [rs, start) */
+      if (ensure_range_capacity_locked(1)) {
+        range_registry[range_count].start = end;
+        range_registry[range_count].end = re;
+        range_registry[range_count].committed = range_registry[i].committed;
+        range_count++;
+      }
+      /* else: the right remainder [end, re) has to be dropped for lack
+         of memory; it then classifies as UNKNOWN, same as if it had
+         never been registered -- the safe (if imprecise) direction, as
+         in mark_range_locked(). */
+    } else if (rs < start) {
+      /* Overlap on this entry's right side: keep [rs, start) only. */
+      range_registry[i].end = start;
+    } else if (re > end) {
+      /* Overlap on this entry's left side: keep [end, re) only. */
+      range_registry[i].start = end;
+    } else {
+      /* This entry is fully inside [start, end): drop it. */
+      range_registry[i] = range_registry[range_count - 1];
+      range_count--;
+      i--; /*< re-examine the entry swapped into this index */
+    }
+  }
+}
+
 GC_INNER void
 GC_isolate_vdb_register_heap_sect(ptr_t start, size_t bytes)
 {
@@ -389,6 +435,61 @@ GC_isolate_vdb_drain_pending(void)
           "Claiming cross-isolate dirty page %p into this thread's own"
           " dirty bitmap\n",
           (void *)addr);
+      pending_queue[i] = pending_queue[pending_count - 1];
+      pending_count--;
+      /* Re-check the swapped-in entry at index i; do not advance. */
+    } else {
+      i++;
+    }
+  }
+  GC_isolate_mutex_unlock(&pending_lock);
+}
+
+GC_INNER void
+GC_isolate_vdb_deinit(void)
+{
+  size_t i;
+
+  /* This thread never registered anything if its own incremental mode
+     was never on (see GC_isolate_vdb_register_heap_sect()); skip taking
+     the locks below for that common case. */
+  if (!GC_incremental)
+    return;
+
+  GC_isolate_mutex_lock(&range_lock);
+  for (i = 0; i < GC_n_heap_sects; i++) {
+    delete_range_locked(GC_heap_sects[i].hs_start,
+                         GC_heap_sects[i].hs_start + GC_heap_sects[i].hs_bytes);
+  }
+  coalesce_ranges_locked();
+  GC_isolate_mutex_unlock(&range_lock);
+
+  if (0 == pending_count)
+    return;
+
+  /* Any pending page inside one of this thread's own heap sections can
+     only ever be claimed by this thread (GC_isolate_vdb_drain_pending()
+     relies on GC_find_header(), which consults this thread's own TLS
+     header table); once that table is gone, it would sit here forever.
+     Drop those entries now, while GC_heap_sects/GC_n_heap_sects (about to
+     be cleared by GC_deinit()) still identify them. */
+  GC_isolate_mutex_lock(&pending_lock);
+  i = 0;
+  while (i < pending_count) {
+    ptr_t addr = pending_queue[i];
+    size_t j;
+    GC_bool owned = FALSE;
+
+    for (j = 0; j < GC_n_heap_sects; j++) {
+      ptr_t hs_start = GC_heap_sects[j].hs_start;
+      ptr_t hs_end = hs_start + GC_heap_sects[j].hs_bytes;
+
+      if (addr >= hs_start && addr < hs_end) {
+        owned = TRUE;
+        break;
+      }
+    }
+    if (owned) {
       pending_queue[i] = pending_queue[pending_count - 1];
       pending_count--;
       /* Re-check the swapped-in entry at index i; do not advance. */

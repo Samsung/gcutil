@@ -60,6 +60,18 @@ GC_INNER GC_bool GC_isolate_vdb_push_pending(struct hblk *h, unsigned n);
    TLS dirty bitmap, to claim any pending pages that belong to it. */
 GC_INNER void GC_isolate_vdb_drain_pending(void);
 
+/* Called from GC_deinit(), while GC_heap_sects/GC_n_heap_sects for this
+   thread still describe its own heap sections (i.e. before GC_arrays is
+   cleared), to remove this thread's own entries from the registries
+   above. Without this, range_registry and pending_queue only ever grow:
+   register_heap_sect() has no matching "unregister", so a process that
+   keeps creating and destroying GC_THREAD_ISOLATE threads would have
+   both registries grow without bound. Once this thread's GC instance
+   is gone, no isolate can ever again
+   legitimately write to (or drain a pending page in) its old heap
+   sections, so dropping them here is safe, not merely a leak fix. */
+GC_INNER void GC_isolate_vdb_deinit(void);
+
 #else /* !(GC_THREAD_ISOLATE && MPROTECT_VDB) */
 
 GC_INLINE void
@@ -85,6 +97,11 @@ GC_isolate_vdb_note_remap(ptr_t start, size_t bytes)
 
 GC_INLINE void
 GC_isolate_vdb_drain_pending(void)
+{
+}
+
+GC_INLINE void
+GC_isolate_vdb_deinit(void)
 {
 }
 
