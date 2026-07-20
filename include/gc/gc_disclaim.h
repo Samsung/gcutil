@@ -78,6 +78,11 @@ GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void *GC_CALL
                         const struct GC_finalizer_closure * /* `fc` */)
         GC_ATTR_NONNULL(2);
 
+GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void *GC_CALL
+    GC_finalized_atomic_malloc(size_t /* `size` */,
+                               const struct GC_finalizer_closure * /* `fc` */)
+        GC_ATTR_NONNULL(2);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -4,6 +4,7 @@
 #include <gc.h>
 #include <gc/gc_mark.h>
 #include <gc/gc_typed.h>
+#include <gc/gc_disclaim.h>
 #include <assert.h>
 #include <cstdlib>
 

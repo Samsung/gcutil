@@ -2388,6 +2388,8 @@ struct _GC_arrays {
 #ifdef ENABLE_DISCLAIM
 #  define GC_finalized_kind GC_arrays._finalized_kind
   unsigned _finalized_kind;
+#  define GC_finalized_ptrfree_kind GC_arrays._finalized_ptrfree_kind
+  unsigned _finalized_ptrfree_kind;
 #endif
 
 #ifndef NO_CLOCK
