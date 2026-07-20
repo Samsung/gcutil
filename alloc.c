@@ -16,6 +16,7 @@
  */
 
 #include "private/gc_priv.h"
+#include "private/vdb_isolate.h"
 
 /*
  * Separate free lists are maintained for different sized objects up
@@ -1635,6 +1636,7 @@ GC_add_to_heap(struct hblk *h, size_t sz)
   GC_heap_sects[GC_n_heap_sects].hs_start = (ptr_t)h;
   GC_heap_sects[GC_n_heap_sects].hs_bytes = sz;
   GC_n_heap_sects++;
+  GC_isolate_vdb_register_heap_sect((ptr_t)h, sz);
   hhdr->hb_block = h;
   hhdr->hb_sz = sz;
   hhdr->hb_flags = 0;

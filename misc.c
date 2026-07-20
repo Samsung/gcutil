@@ -1699,6 +1699,26 @@ GC_enable_incremental(void)
   if (!GC_find_leak_inner && NULL == GETENV("GC_DISABLE_INCREMENTAL")) {
     LOCK();
     if (!GC_incremental) {
+#  if defined(GC_THREAD_ISOLATE) && defined(MPROTECT_VDB)
+      if (GC_is_initialized) {
+        /*
+         * Under GC_THREAD_ISOLATE + MPROTECT_VDB, whether this thread's
+         * heap sections get recorded in the cross-isolate VDB registries
+         * (vdb_isolate.c) is decided by GC_incremental at the moment
+         * each section is added (GC_add_to_heap()). Turning incremental
+         * on only now, after this thread's GC_init() has already run
+         * (and possibly after heap sections already exist unrecorded),
+         * would leave those earlier sections permanently unrecognized:
+         * a later cross-isolate write into one of them would then
+         * misclassify as a genuine segfault instead of a benign write.
+         * So for this thread, incremental can only be requested before
+         * its own GC_init() completes; once initialized without it, it
+         * stays off.
+         */
+        UNLOCK();
+        return;
+      }
+#  endif
       GC_setpagesize();
       /* TODO: Should we skip enabling incremental if win32s? */
 

@@ -15,6 +15,7 @@
  */
 
 #include "private/gc_pmark.h"
+#include "private/vdb_isolate.h"
 
 /*
  * Make arguments appear live to compiler.  Put here to minimize the
@@ -358,6 +359,7 @@ GC_initiate_gc(void)
   GC_ASSERT(GC_is_initialized);
 #ifndef GC_DISABLE_INCREMENTAL
   if (GC_incremental) {
+    GC_isolate_vdb_drain_pending();
 #  ifdef CHECKSUMS
     GC_read_dirty(FALSE);
     GC_check_dirty();

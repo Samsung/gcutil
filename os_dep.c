@@ -16,6 +16,7 @@
  */
 
 #include "private/gc_priv.h"
+#include "private/vdb_isolate.h"
 
 #if (defined(MPROTECT_VDB) && !defined(MSWIN32) && !defined(MSWINCE)) \
     || (defined(SOLARIS) && defined(THREADS)) || defined(OPENBSD)     \
@@ -3074,6 +3075,7 @@ GC_unmap(ptr_t start, size_t bytes)
   ptr_t start_addr = GC_unmap_start(start, bytes);
   ptr_t end_addr = GC_unmap_end(start, bytes);
 
+  GC_isolate_vdb_note_unmap(start_addr, (size_t)(end_addr - start_addr));
   block_unmap_inner(start_addr, (size_t)(end_addr - start_addr));
 }
 
@@ -3086,6 +3088,7 @@ GC_remap(ptr_t start, size_t bytes)
   if (NULL == start_addr) {
     return;
   }
+  GC_isolate_vdb_note_remap(start_addr, (size_t)(end_addr - start_addr));
 
   /* FIXME: Handle out-of-memory correctly (at least for Win32). */
 #  ifdef USE_WINALLOC
@@ -3688,6 +3691,24 @@ is_header_found_async(const void *p)
 #    define is_header_found_async(p) (HDR(p) != NULL)
 #  endif /* !THREADS */
 
+#  if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
+      || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+/*
+ * Same reasoning as the GC_init() check in misc.c (see commit
+ * "Update `GC_is_initialized` check for TLS trick"): the GC_is_initialized
+ * macro resolves through GC_arrays, which under this TLS-by-address
+ * trick calls GC_tls_base_address() -- that returns a wrong address on
+ * a thread that has never made a real (compiler-generated) TLS access
+ * before, so it cannot be trusted to answer "is this thread's own GC
+ * ever initialized?" from inside a signal handler on an arbitrary
+ * thread. GC_arrays_instance is the plain `__thread` variable itself
+ * and is always safe to read.
+ */
+#    define GC_write_fault_this_thread_inited GC_arrays_instance._is_initialized
+#  else
+#    define GC_write_fault_this_thread_inited GC_is_initialized
+#  endif
+
 #  ifndef DARWIN
 
 #    if !defined(MSWIN32) && !defined(MSWINCE)
@@ -3765,17 +3786,60 @@ GC_write_fault_handler(struct _EXCEPTION_POINTERS *exc_info)
 #    ifdef CHECKSUMS
     GC_record_fault(h);
 #    endif
+    /*
+     * Under GC_THREAD_ISOLATE, GC_top_index (and thus
+     * is_header_found_async()) is this thread's own TLS state. If this
+     * thread has never initialized its own GC instance, that state is
+     * raw zeroed memory rather than the GC_all_nils-populated table
+     * GET_BI() assumes, and the lookup itself segfaults instead of
+     * just reporting "not found" -- e.g. a plain thread that never
+     * called GC_init() writing into another isolate's heap object.
+     * Skip straight to "not found" until this thread has a real header
+     * table; GC_isolate_vdb_classify_fault() below still recognizes
+     * the cross-isolate case from the global section registry.
+     */
 #    ifdef SUNOS5SIGS
     /* Address is only within the correct physical page. */
     in_allocd_block = FALSE;
-    for (i = 0; i < divHBLKSZ(GC_page_size); i++) {
-      if (is_header_found_async(&h[i])) {
-        in_allocd_block = TRUE;
-        break;
+    if (GC_write_fault_this_thread_inited) {
+      for (i = 0; i < divHBLKSZ(GC_page_size); i++) {
+        if (is_header_found_async(&h[i])) {
+          in_allocd_block = TRUE;
+          break;
+        }
       }
     }
 #    else
-    in_allocd_block = is_header_found_async(addr);
+    in_allocd_block
+        = GC_write_fault_this_thread_inited && is_header_found_async(addr);
+#    endif
+#    if defined(GC_THREAD_ISOLATE) && defined(MPROTECT_VDB)
+    if (!in_allocd_block
+        && GC_isolate_vdb_classify_fault(addr)
+               == GC_ISOLATE_VDB_CROSS_ISOLATE
+        && GC_isolate_vdb_push_pending(h, (unsigned)divHBLKSZ(GC_page_size))) {
+      /*
+       * Not this thread's page, but a live page of another isolate's
+       * TLS heap (see vdb_isolate.c) -- not a real fault. All pages in
+       * this block are now durably queued for the owning isolate to
+       * mark dirty (GC_dirty_pages here is this thread's own, unrelated
+       * TLS bitmap), so it is safe to unprotect and let the write
+       * retry. If the push above had failed (queue full) we fall
+       * through to the ordinary abort path instead -- letting the
+       * write through unrecorded would mean the owning isolate never
+       * rescans this page, which can free a still-live object.
+       */
+      MP_PROTECT_INNER(h, GC_page_size, TRUE);
+      GC_COND_LOG_PRINTF(
+          "Cross-isolate write at %p (block %p): queued %u page(s)"
+          " for owning isolate to mark dirty\n",
+          (void *)addr, (void *)h, (unsigned)divHBLKSZ(GC_page_size));
+#      if defined(MSWIN32) || defined(MSWINCE)
+      return EXCEPTION_CONTINUE_EXECUTION;
+#      else
+      return;
+#      endif
+    }
 #    endif
     if (!in_allocd_block) {
       /*
@@ -5159,6 +5223,22 @@ GC_dirty_inner(const void *p)
   GC_ASSERT(GC_manual_vdb);
 #  endif
   async_set_pht_entry_from_index(GC_dirty_pages, index);
+}
+#endif
+
+#if defined(GC_THREAD_ISOLATE) && defined(MPROTECT_VDB)
+/*
+ * Cross-isolate write recovery helper (see vdb_isolate.c): marks `p`
+ * dirty in the calling thread's own TLS bitmap without the GC_manual_vdb
+ * assertion GC_dirty_inner() has, since the caller here has already
+ * confirmed via GC_find_header() that `p` belongs to the calling
+ * (draining) thread's own heap, regardless of whether manual VDB mode
+ * happens to be enabled for it.
+ */
+GC_INNER void
+GC_isolate_dirty_page(const void *p)
+{
+  async_set_pht_entry_from_index(GC_dirty_pages, PHT_HASH(p));
 }
 #endif
 
