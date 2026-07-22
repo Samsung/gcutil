@@ -15,9 +15,6 @@
  * modified is included with the above copyright notice.
  */
 
-// force enable eager sweep
-#define EAGER_SWEEP
-
 #include "private/gc_priv.h"
 
 #ifdef ENABLE_DISCLAIM
@@ -660,7 +657,7 @@ GC_reclaim_block(struct hblk *hbp, void *report_if_found)
         GC_freehblk(hbp);
         FREE_PROFILER_HOOK(hbp);
       }
-    } else if (GC_find_leak_inner || !GC_block_nearly_full(hhdr, sz)) {
+    } else if (GC_find_leak_inner || !GC_block_nearly_full(hhdr, sz) || ok->ok_eager_sweep) {
       /* Group of smaller objects, enqueue the real work. */
       struct hblk **rlh = ok->ok_reclaim_list;
 
@@ -977,6 +974,8 @@ GC_start_reclaim(GC_bool report_if_found)
    */
   GC_apply_to_all_blocks(GC_reclaim_block, NUMERIC_TO_VPTR(report_if_found));
 
+  if (UNLIKELY(GC_is_enumerate_reachable_objects))
+      GC_reclaim_all((GC_stop_func)0, FALSE);
 #ifdef EAGER_SWEEP
   /*
    * This is a very stupid thing to do.  We make it possible anyway.
@@ -1092,7 +1091,9 @@ GC_reclaim_unconditionally_marked(void)
     struct obj_kind *ok = &GC_obj_kinds[kind];
     struct hblk **rlp = ok->ok_reclaim_list;
 
-    if (NULL == rlp || !ok->ok_mark_unconditionally)
+    if (NULL == rlp)
+      continue;
+    if (!ok->ok_mark_unconditionally && !ok->ok_eager_sweep)
       continue;
 
     for (lg = 1; lg <= MAXOBJGRANULES; lg++) {
@@ -1162,10 +1163,15 @@ GC_API void GC_CALL
 GC_enumerate_reachable_objects_inner(GC_reachable_object_proc proc,
                                      void *client_data)
 {
+  GC_is_enumerate_reachable_objects = TRUE;
+  GC_gcollect(); // Update mark status
+  GC_is_enumerate_reachable_objects = FALSE;
+  GC_disable();
   struct enumerate_reachable_s ed;
 
   GC_ASSERT(I_HOLD_READER_LOCK());
   ed.proc = proc;
   ed.client_data = client_data;
   GC_apply_to_all_blocks(GC_do_enumerate_reachable_objects, &ed);
+  GC_enable();
 }

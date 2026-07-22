@@ -2702,6 +2702,9 @@ struct _GC_arrays {
     || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
   struct obj_kind GC_obj_kinds_instance[MAXOBJKINDS];
 #endif
+
+#  define GC_is_enumerate_reachable_objects GC_arrays._is_enumerate_reachable_objects
+  GC_bool _is_enumerate_reachable_objects;
 };
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
