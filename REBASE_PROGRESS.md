@@ -680,6 +680,39 @@ commit, on a different branch, before this fix)
 
 ---
 
+## F17. `GCUTIL_NOSYS_BAREMETAL` CMake option (Samsung-custom CMake delta)
+
+**Depends on:** nothing (independent)
+
+### What to do
+
+**CMakeLists.txt:** Add an `OPTION(GCUTIL_NOSYS_BAREMETAL ... OFF)`. When ON,
+replace the hosted `FILE(GLOB GCUTIL_BDWGC_SRC *.c)` + `Allocator.cpp
+LeakChecker.cpp` with a curated 21-file `.c` list (allchblk, alloc,
+backgraph, blacklst, checksums, dbg_mlc, dyn_load, finalize, fnlz_mlc,
+headers, mach_dep, malloc, mallocx, mark, mark_rts, misc, new_hblk, os_dep,
+ptr_chck, reclaim, typd_mlc) + `Allocator.cpp LeakChecker.cpp
+gc_badalc.cpp` (no `gc_cpp.cpp`: its only content is the *global*
+`::operator new`/`delete` override, unneeded by Escargot and conflicting
+with NuttX's `libsupc++.a` at link time), and replace the hosted
+GNU/Clang/AppleClang define block (`HAVE_DLADDR`, `USE_MMAP`,
+`HAVE_PTHREAD_GETATTR_NP`, ...) with a NOSYS-specific set (`NOSYS`,
+`SMALL_CONFIG`, `GC_NOT_DLL`, `GC_NO_SIGHANDLER`, `NO_GETENV`, `NO_CLOCK`,
+`GC_NEW_ABORTS_ON_OOM`, `GC_DISABLE_INCREMENTAL`, `IGNORE_DYNAMIC_LOADING`,
+`DONT_USE_MMAP`, `GC_NO_DLOPEN`, `GC_ATOMIC_UNCOLLECTABLE`,
+`ENABLE_DISCLAIM`, plus a caller-supplied `GCUTIL_INITIAL_HEAP_SIZE`).
+Leave `GCUTIL_ENABLE_THREADING` alone (callers targeting bare metal simply
+don't set it). This lets an RTOS/bare-metal port `add_subdirectory()` this
+project directly (producing the same `gc-lib` target as the hosted build)
+instead of hand-copying its source list/defines, matching the reuse
+pattern Escargot's own top-level `CMakeLists.txt` already uses for the
+main engine on those ports. Defaults OFF, so every hosted platform
+(Linux/Darwin/Windows/Android/Tizen) is unaffected.
+
+**Commits:** (this fix, applied directly on top of whatever branch needs it)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
