@@ -50,6 +50,7 @@ Step  Feature  Description                          Depends on
 13    F13      Cross-isolate VDB                     F10, F12
 14    F14      EAGER_SWEEP conditional enablement    F1
 15    F15      Misc new features                     F9 (for F15b only)
+16    F16      Raise MAXOBJKINDS under SMALL_CONFIG  (independent)
 ```
 
 Dependency graph:
@@ -64,6 +65,7 @@ F1 ─┬─→ F2 ─→ F10 ─┬─→ F11
      ├─→ F8 (independent)
      └─→ F9 (independent, but needs CMakeLists from base)
 F15: standalone (F15b needs F9 for GCUtil.h)
+F16: standalone (independent)
 ```
 
 ---
@@ -645,6 +647,36 @@ dereference; the array-to-pointer decay yields the symbol's address directly.
 
 **Reference:** `git diff 2aad00c0..HEAD`
 **Commits:** `1a8009ec`, `55d854fe`, `c70e1ae0` (all new)
+
+---
+
+## F16. Raise MAXOBJKINDS under SMALL_CONFIG
+
+**Depends on:** nothing (independent)
+
+### What to do
+
+**gc_priv.h:** `MAXOBJKINDS`'s `SMALL_CONFIG` branch defines it as 16, versus 24
+for a normal (non-debug) build. Escargot registers several custom typed-GC
+kinds on top of BDWGC's own built-in kinds (e.g. BackingStore, ByteCodeBlock —
+see F9/F15's finalizer work and later Escargot-side history), and 16 isn't
+enough headroom once those stack up. Collapse the `SMALL_CONFIG` distinction
+so both the small and normal configs get 24, keeping `GC_DEBUG` at 32:
+
+```c
+/* Object kinds. */
+#ifndef MAXOBJKINDS
+#  ifdef GC_DEBUG
+#    define MAXOBJKINDS 32
+#  else
+#    define MAXOBJKINDS 24
+#  endif
+#endif
+```
+
+**Reference:** `git diff 0daf8a4f4^..0daf8a4f4` (the original SMALL_CONFIG=16
+commit, on a different branch, before this fix)
+**Commits:** (this fix, applied directly on top of whatever branch needs it)
 
 ---
 

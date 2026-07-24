@@ -1623,10 +1623,12 @@ struct back_edges_s {
 #ifndef MAXOBJKINDS
 #  ifdef GC_DEBUG
 #    define MAXOBJKINDS 32
-#  elif !defined(SMALL_CONFIG)
-#    define MAXOBJKINDS 24
 #  else
-#    define MAXOBJKINDS 16
+/* Escargot registers several custom typed-GC kinds on top of BDWGC's own
+ * built-in kinds (e.g. BackingStore, ByteCodeBlock); 16 is not enough
+ * headroom once those stack up under SMALL_CONFIG, so SMALL_CONFIG no
+ * longer gets its own smaller value here -- both branches use 24. */
+#    define MAXOBJKINDS 24
 #  endif
 #endif
 GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
