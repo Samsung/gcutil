@@ -51,6 +51,8 @@ Step  Feature  Description                          Depends on
 14    F14      EAGER_SWEEP conditional enablement    F1
 15    F15      Misc new features                     F9 (for F15b only)
 16    F16      Raise MAXOBJKINDS under SMALL_CONFIG  (independent)
+17    F17      GCUTIL_NOSYS_BAREMETAL CMake option   (independent)
+18    F18      GC_push_marked honours GC_DS_PROC     F1
 ```
 
 Dependency graph:
@@ -66,6 +68,8 @@ F1 ─┬─→ F2 ─→ F10 ─┬─→ F11
      └─→ F9 (independent, but needs CMakeLists from base)
 F15: standalone (F15b needs F9 for GCUtil.h)
 F16: standalone (independent)
+F17: standalone (independent)
+F18: needs F1 (custom mark procs); only observable together with F4
 ```
 
 ---
@@ -708,6 +712,69 @@ instead of hand-copying its source list/defines, matching the reuse
 pattern Escargot's own top-level `CMakeLists.txt` already uses for the
 main engine on those ports. Defaults OFF, so every hosted platform
 (Linux/Darwin/Windows/Android/Tizen) is unaffected.
+
+**Commits:** (this fix, applied directly on top of whatever branch needs it)
+
+---
+
+## F18. `GC_push_marked` must honour `GC_DS_PROC` descriptors
+
+**Depends on:** F1 (custom mark procs). Only *observable* together with F4
+(32-bit address mode), but the fix is correct independently of it.
+
+### What to do
+
+**mark.c, `GC_push_marked()`:** The function dispatches on the object's granule
+count and, when `USE_PUSH_MARKED_ACCELERATORS` is enabled, routes 1/2/4-granule
+blocks to `GC_push_marked1/2/4`. Those accelerators ignore `hhdr->hb_descr`
+entirely and conservatively scan every word of each marked object. That is a
+safe *superset* for `GC_DS_LENGTH` and `GC_DS_BITMAP` descriptors, but it is
+**wrong for `GC_DS_PROC`**: a mark procedure exists precisely because its
+referents cannot be recovered by plain word-at-a-time scanning. Under F4 the
+Escargot kinds store 32-bit compressed pointers packed two per machine word, so
+the accelerated path sees no pointers at all and the referents are never marked.
+
+Gate the accelerators on the descriptor tag so `GC_DS_PROC` blocks fall through
+to the general `default:` path (which pushes each marked object with
+`hhdr->hb_descr`, correctly re-invoking the mark procedure).
+`BYTES_TO_GRANULES(sz)` is never 0 for a real object, so 0 reliably selects
+`default`:
+
+```c
+  GC_objects_are_marked = TRUE;
+  switch ((hhdr->hb_descr & GC_DS_TAGS) == GC_DS_PROC
+              ? 0
+              : BYTES_TO_GRANULES(sz)) {
+```
+
+### Why this matters
+
+`GC_push_marked` is reached from two places, so this silently under-marks in
+normal operation — it is not an edge case:
+
+1. **Mark stack overflow recovery.** `GC_signal_mark_stack_overflow()` discards
+   `GC_MARK_STACK_DISCARDS` already-marked-but-unscanned entries and sets
+   `GC_mark_state = MS_INVALID`; correctness then depends on the full re-scan of
+   all marked objects going through `GC_push_marked`.
+2. **Incremental GC dirty-page re-scan** (`GC_push_next_marked_dirty`), which
+   runs every cycle even with no overflow.
+
+Symptom seen in Escargot (2026-07): a live fast-mode `ArrayObject`'s
+`EncodedSmallValueVectorKind` element buffer is 32 bytes = 2 granules, so after
+a mark stack overflow its `NumberInEncodedValue` element boxes were never
+marked, were reclaimed, and got reused by a `StringBuilder` allocation; the
+interpreter's `GetObject` fast path then loaded string bytes as a `Value` and
+crashed in `unaryTypeof`. `ArrayObject` itself (48 bytes = 3 granules) escaped
+only because 3 is not an accelerated case.
+
+### Verification
+
+`test/vendortest/Escargot/new-es/top-level-await-in-class-ctor.js` (run after
+`assert.js`) reproduces deterministically in a release x64 build with the
+default mark stack size. Useful knobs while bisecting: `GC_PRINT_STATS=1` shows
+`Mark stack overflow` lines, and `GC_INITIAL_HEAP_SIZE=2000000000` or
+`GC_FREE_SPACE_DIVISOR=1` makes the failure disappear by changing GC timing.
+After the fix the test passes with overflows still occurring.
 
 **Commits:** (this fix, applied directly on top of whatever branch needs it)
 
