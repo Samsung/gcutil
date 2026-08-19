@@ -1,5 +1,9 @@
 PROJECT(gc)
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12 FATAL_ERROR)
+# The "...4.0" range keeps this buildable on CMake 4.x, which hard-errors
+# when the effective policy version is below 3.5; pre-3.12 CMake doesn't
+# understand the range syntax and just uses 2.8.12 as before (see
+# `cmake --help-command cmake_minimum_required`).
+CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12...4.0 FATAL_ERROR)
 
 # Set default build type if not specified (standard CMake practice)
 IF (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
@@ -13,10 +17,10 @@ ENDIF()
 # Compute both variants unconditionally (instead of branching on CMAKE_BUILD_TYPE here) so
 # the $<CONFIG:MinSizeRel> generator expression below picks the right one at build time even
 # for multi-config generators, where CMAKE_BUILD_TYPE isn't set at configure time.
-IF (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Clang|AppleClang")
+IF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
     SET (GCUTIL_RELEASE_FLAGS_MINSIZEREL "-Os")
     SET (GCUTIL_RELEASE_FLAGS_OTHER "-O2")
-ELSEIF (${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC" OR COMPILER_CLANG_CL)
+ELSEIF (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR COMPILER_CLANG_CL)
     SET (GCUTIL_RELEASE_FLAGS_MINSIZEREL "/O1")
     SET (GCUTIL_RELEASE_FLAGS_OTHER "/O2")
 ENDIF()
@@ -83,7 +87,7 @@ ELSE()
 ENDIF()
 
 # FLAGS FOR COMPILER
-IF (${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC" OR COMPILER_CLANG_CL)
+IF (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR COMPILER_CLANG_CL)
     # NOTE: this branch used to be reduced to just "/wd4146 /DGC_NOT_DLL" during
     # the CMake-conventions refactor, silently dropping every define below --
     # including -DENABLE_DISCLAIM=1/-DGC_ATOMIC_UNCOLLECTABLE=1, which gate
@@ -108,7 +112,7 @@ IF (${CMAKE_CXX_COMPILER_ID} STREQUAL "MSVC" OR COMPILER_CLANG_CL)
         $<$<NOT:$<CONFIG:Debug>>:-DNO_DEBUGGING=1>
         $<$<NOT:$<CONFIG:Debug>>:-DNO_ALL_INTERIOR_POINTERS=1>
         $<$<NOT:$<CONFIG:Debug>>:/Oy->)
-ELSEIF (${CMAKE_CXX_COMPILER_ID} MATCHES "GNU|Clang|AppleClang") #include GNU, Clang and AppleClang all
+ELSEIF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang") #include GNU, Clang and AppleClang all
     IF (GCUTIL_NOSYS_BAREMETAL)
         # GCUTIL_NOSYS_BAREMETAL mode: curated bare-metal subset (no pthreads/mmap)
         # matches gcconfig.h's ARM32/NOSYS branch. GCUTIL_BDWGC_SRC/GCUTIL_SRC
@@ -257,13 +261,25 @@ ENDIF()
 ADD_LIBRARY(gc-lib STATIC ${GCUTIL_BDWGC_SRC} ${GCUTIL_SRC})
 SET_TARGET_PROPERTIES(gc-lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# SEPARATE_ARGUMENTS()'s NATIVE_COMMAND mode needs CMake 3.9+ -- pick
+# WINDOWS_COMMAND/UNIX_COMMAND explicitly instead (that's all NATIVE_COMMAND
+# does internally anyway), which has worked since CMake's earliest 2.x
+# releases and keeps this compatible with the 2.8.12 floor declared above.
+MACRO (SEPARATE_ARGUMENTS_NATIVE_COMPAT _var)
+    IF (WIN32)
+        SEPARATE_ARGUMENTS (${_var} WINDOWS_COMMAND)
+    ELSE()
+        SEPARATE_ARGUMENTS (${_var} UNIX_COMMAND)
+    ENDIF()
+ENDMACRO()
+
 # Set compile options after target creation
 # Using target_compile_options for proper flag handling
 IF (GCUTIL_CFLAGS_FROM_EXTERNAL)
-    # Convert space-separated string of flags to a CMake list to prevent compilation failures 
+    # Convert space-separated string of flags to a CMake list to prevent compilation failures
     # where multiple flags are incorrectly treated as a single quoted argument.
     IF (NOT GCUTIL_CFLAGS_FROM_EXTERNAL MATCHES ";")
-        SEPARATE_ARGUMENTS(GCUTIL_CFLAGS_FROM_EXTERNAL NATIVE_COMMAND)
+        SEPARATE_ARGUMENTS_NATIVE_COMPAT(GCUTIL_CFLAGS_FROM_EXTERNAL)
     ENDIF()
 ENDIF()
 
