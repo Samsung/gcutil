@@ -257,8 +257,15 @@ IF (GCUTIL_ENABLE_THREADING)
     ENDIF()
 ENDIF()
 
-# Create the library target (Always STATIC as a sub-component of escargot engine)
-ADD_LIBRARY(gc-lib STATIC ${GCUTIL_BDWGC_SRC} ${GCUTIL_SRC})
+# Keep the collector private/static unless the embedder explicitly requests a
+# shared library. Escargot and its embedder must use the same collector instance
+# rather than two GC heaps.
+IF (GCUTIL_BUILD_SHARED_LIBS)
+    SET (GCUTIL_LIBRARY_TYPE SHARED)
+ELSE()
+    SET (GCUTIL_LIBRARY_TYPE STATIC)
+ENDIF()
+ADD_LIBRARY(gc-lib ${GCUTIL_LIBRARY_TYPE} ${GCUTIL_BDWGC_SRC} ${GCUTIL_SRC})
 SET_TARGET_PROPERTIES(gc-lib PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # SEPARATE_ARGUMENTS()'s NATIVE_COMMAND mode needs CMake 3.9+ -- pick
@@ -294,6 +301,31 @@ TARGET_COMPILE_OPTIONS(gc-lib PRIVATE
     $<$<CONFIG:MinSizeRel>:${GCUTIL_RELEASE_FLAGS_MINSIZEREL}>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<CONFIG:MinSizeRel>>>:${GCUTIL_RELEASE_FLAGS_OTHER}>
 )
+
+IF (WIN32 AND GCUTIL_BUILD_SHARED_LIBS)
+    # MSVC cannot dllimport/dllexport the thread-local public data used by
+    # GC_THREAD_ISOLATE. Keep consumer declarations plain extern and let CMake
+    # generate the import library from the symbols defined by gc-lib.
+    TARGET_COMPILE_DEFINITIONS(gc-lib PRIVATE GC_BUILD)
+    TARGET_COMPILE_OPTIONS(gc-lib INTERFACE
+        /DGC_NOT_DLL /DGC_API=extern /DGC_API_PRIV=extern)
+    SET_TARGET_PROPERTIES(gc-lib PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    IF (GCUTIL_WINDOWS_EXPORT_NORMALIZER)
+        IF (CMAKE_CONFIGURATION_TYPES)
+            SET (GCUTIL_WINDOWS_EXPORT_FILE
+                 ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/gc-lib.dir/$<CONFIG>/exports.def)
+        ELSE()
+            SET (GCUTIL_WINDOWS_EXPORT_FILE
+                 ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/gc-lib.dir/exports.def)
+        ENDIF()
+        ADD_CUSTOM_COMMAND(TARGET gc-lib PRE_LINK
+            COMMAND ${CMAKE_COMMAND}
+                -DINPUT_FILE=${GCUTIL_WINDOWS_EXPORT_FILE}
+                -DOBJECT_LIST=${GCUTIL_WINDOWS_EXPORT_FILE}.objs
+                -DBUILD_ROOT=${CMAKE_BINARY_DIR}
+                -P ${GCUTIL_WINDOWS_EXPORT_NORMALIZER})
+    ENDIF()
+ENDIF()
 
 # Use target_include_directories for include paths
 TARGET_INCLUDE_DIRECTORIES(gc-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
