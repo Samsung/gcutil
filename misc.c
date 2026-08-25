@@ -21,6 +21,10 @@
 #include <limits.h>
 #include <stdarg.h>
 
+#if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY) && defined(__BIONIC__)
+#  include <android/api-level.h>
+#endif
+
 #if defined(SOLARIS) && defined(THREADS)
 #  include <sys/syscall.h>
 #endif
@@ -75,12 +79,12 @@ __thread unsigned char GC_cancel_disable_count = 0;
 #endif
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
-word GC_tls_gc_array_offset;
+GC_signed_word GC_tls_gc_array_offset;
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance /* `= { 0 }` */;
 #elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
-word GC_tls_gc_array_offset;
+GC_signed_word GC_tls_gc_array_offset;
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance /* `= { 0 }` */;
-MAY_THREAD_LOCAL pthread_key_t GC_arrays_pthread_key;
+pthread_key_t GC_arrays_pthread_key;
 #else
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* `= { 0 }` */;
 #endif
@@ -1045,30 +1049,268 @@ GC_parse_mem_size_arg(const char *str)
 #define GC_LOG_STD_NAME "gc.log"
 
 #if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+/*
+ * Locate this thread's storage slot for a pthread key as a fixed offset
+ * from the thread pointer.  The whole mechanism relies on that offset being
+ * identical on every thread, which holds because both supported libc
+ * families place the per-thread key storage at a compile-time constant
+ * displacement from the thread pointer:
+ *
+ *   - glibc: the slot is `struct pthread.specific_1stblock[idx].data`, and
+ *     `THREAD_SELF` is the thread pointer plus or minus a constant.  On
+ *     TLS_TCB_AT_TP targets (x86, x86_64) `struct pthread` starts at the
+ *     thread pointer, so the slot is at a positive offset; on TLS_DTV_AT_TP
+ *     targets (arm, aarch64, riscv) it is placed immediately below the
+ *     thread pointer, so the offset is negative.  Both directions are
+ *     therefore searched.
+ *   - bionic changed layout at Android 10.  Through Android 9 the key array is
+ *     inline in `pthread_internal_t`, immediately above the thread pointer, so
+ *     the original one-page upward scan is used.  Since Android 10 the array
+ *     is the first member of `bionic_tls`; its address is derived through
+ *     TLS_SLOT_BIONIC_TLS, see `tls_key_slot_bionic()`.
+ *
+ * Note that the direction is a property of the libc rather than of the
+ * target architecture: on aarch64 bionic keeps the slot above the thread
+ * pointer while glibc keeps it below.
+ */
+
+#  if CPP_WORDSZ == 32
+#    define GC_TLS_KEY_MAGIC1 ((size_t)0xbeefdeadU)
+#    define GC_TLS_KEY_MAGIC2 ((size_t)0xfeedfaceU)
+#  else
+#    define GC_TLS_KEY_MAGIC1 ((size_t)0xbeefdeaddeadbeefULL)
+#    define GC_TLS_KEY_MAGIC2 ((size_t)0xfeedfacecafebabeULL)
+#  endif
+
+/*
+ * Which side of the thread pointer to search first.  Both are searched, but
+ * a scan that fails walks a whole page in the wrong direction, and neither
+ * libc guarantees that much memory to be mapped there (on TLS_TCB_AT_TP
+ * targets glibc puts `struct pthread` at the very end of the thread's stack
+ * mapping, so the page above the thread pointer ends inside it), so the
+ * likely direction goes first.
+ */
+#  if !defined(__BIONIC__) \
+      && (defined(ARM32) || defined(AARCH64) || defined(RISCV))
+#    define GC_TLS_KEY_SLOT_BELOW_TP
+#  endif
+
+/*
+ * Tell a real key slot from a stale copy of the magic sitting in unrelated
+ * memory: the value was just passed to `pthread_setspecific()`, so it may
+ * well have been spilled onto the stack, and only the real slot follows the
+ * key to a second value.  `GC_TLS_KEY_MAGIC1` is put back on the way out so
+ * that rejecting a candidate does not disturb the caller's scan.
+ */
+static GC_bool
+tls_key_slot_verify(pthread_key_t key, size_t *cand)
+{
+  GC_bool result;
+
+  if (*cand != GC_TLS_KEY_MAGIC1)
+    return FALSE;
+  pthread_setspecific(key, (void *)GC_TLS_KEY_MAGIC2);
+  result = (GC_bool)(*cand == GC_TLS_KEY_MAGIC2);
+  pthread_setspecific(key, (void *)GC_TLS_KEY_MAGIC1);
+  return result;
+}
+
 static size_t *
+tls_key_slot_scan_up(pthread_key_t key, char *lo, char *hi)
+{
+  size_t *p;
+
+  for (p = (size_t *)lo; p < (size_t *)hi; p++) {
+    if (tls_key_slot_verify(key, p))
+      return p;
+  }
+  return NULL;
+}
+
+/*
+ * Searched downward from `hi` on purpose: the slot sits just below the
+ * thread pointer, while the bottom of the range is already past the start
+ * of the thread descriptor (the thread's own stack, or data below the
+ * initial break) and is the part most likely to hold a stale magic.
+ */
+static size_t *
+tls_key_slot_scan_down(pthread_key_t key, char *lo, char *hi)
+{
+  size_t *p;
+
+  for (p = (size_t *)hi; p > (size_t *)lo;) {
+    if (tls_key_slot_verify(key, --p))
+      return p;
+  }
+  return NULL;
+}
+
+#  ifdef __BIONIC__
+/* Thread pointer slot holding `bionic_tls`, per bionic's tls_defines.h. */
+#    if defined(ARM32) || defined(AARCH64)
+#      define GC_TLS_SLOT_BIONIC_TLS (-1)
+#    elif defined(I386) || defined(X86_64)
+#      define GC_TLS_SLOT_BIONIC_TLS 9
+#    elif defined(RISCV)
+#      define GC_TLS_SLOT_BIONIC_TLS (-9)
+#    endif
+#  endif
+
+#  ifdef GC_TLS_SLOT_BIONIC_TLS
+/* Layout of bionic's `pthread_key_data_t`. */
+struct GC_bionic_key_data {
+  size_t seq;
+  void *data;
+};
+
+#    define GC_BIONIC_KEY_VALID_FLAG ((unsigned)1 << 31)
+
+/*
+ * `bionic_tls` is reachable through a thread pointer slot of a known index
+ * and `pthread_key_data_t key_data[]` is its first member, so the slot
+ * address follows from the key index without searching memory.  All
+ * `PTHREAD_KEYS_MAX` slots live in that array, hence no equivalent of the
+ * glibc limit described at the `ABORT` in `GC_init()`, which is what makes
+ * this worth having as a fallback for the scan.
+ *
+ * Both the slot index and the layout are libc implementation details, so
+ * the word read from the thread pointer need not be `bionic_tls` at all on
+ * a future bionic: the result is verified against the magic like any other
+ * candidate, and the values that cannot possibly be `bionic_tls` are
+ * rejected before one of them gets dereferenced.
+ */
+static size_t *
+tls_key_slot_bionic(pthread_key_t key, char *tls_base)
+{
+  char *bionic_tls;
+  unsigned idx = (unsigned)key & ~GC_BIONIC_KEY_VALID_FLAG;
+  struct GC_bionic_key_data *key_data;
+  size_t *cand;
+
+  /* Android 9 keeps key_data[] in pthread_internal_t instead.  Although */
+  /* this TLS slot already exists there, the older bionic_tls it points  */
+  /* to does not start with key_data[].                                  */
+  {
+    int android_api_level = android_get_device_api_level();
+    if (android_api_level > 0 && android_api_level < 29)
+      return NULL;
+  }
+
+  bionic_tls = (char *)((void **)tls_base)[GC_TLS_SLOT_BIONIC_TLS];
+  if (NULL == bionic_tls || ((word)bionic_tls & (sizeof(void *) - 1)) != 0)
+    return NULL;
+  key_data = (struct GC_bionic_key_data *)bionic_tls;
+  cand = (size_t *)&key_data[idx].data;
+  return tls_key_slot_verify(key, cand) ? cand : NULL;
+}
+#  endif /* GC_TLS_SLOT_BIONIC_TLS */
+
+/*
+ * Returns the offset of the slot from the thread pointer, or zero if it
+ * could not be located (zero is not a valid slot offset for either libc).
+ */
+static GC_signed_word
 check_pthread_key(pthread_key_t key, char *tls_base)
 {
-#  if CPP_WORDSZ == 32
-  pthread_setspecific(key, (void *)(0xbeefdead));
-#  else
-  pthread_setspecific(key, (void *)(0xbeefdeaddeadbeefULL));
+  size_t *found = NULL;
+  size_t page = (size_t)getpagesize();
+#  ifdef GC_TLS_SLOT_BIONIC_TLS
+  int android_api_level = android_get_device_api_level();
 #  endif
-  size_t *ptr = (size_t *)(tls_base);
-  size_t *tcb_may_end = (size_t *)(tls_base + getpagesize());
 
-  while (ptr < tcb_may_end) {
-#  if CPP_WORDSZ == 32
-    if (*ptr == 0xbeefdead) {
-#  else
-    if (*ptr == 0xbeefdeaddeadbeefULL) {
-#  endif
-      pthread_setspecific(key, NULL);
-      return ptr;
-    }
-    ptr++;
+  pthread_setspecific(key, (void *)GC_TLS_KEY_MAGIC1);
+#  ifdef GC_TLS_SLOT_BIONIC_TLS
+  if (android_api_level >= 29 || android_api_level < 0) {
+    found = tls_key_slot_bionic(key, tls_base);
+  } else {
+    /* Android 9 and earlier: key_data[] follows the TCB slots in       */
+    /* pthread_internal_t and is always within the page above TP.  This */
+    /* is the pre-Android-10 algorithm; do not probe below TP if it     */
+    /* fails.                                                           */
+    found = tls_key_slot_scan_up(key, tls_base, tls_base + page);
   }
+#  endif
+#  ifdef GC_TLS_KEY_SLOT_BELOW_TP
+  found = tls_key_slot_scan_down(key, tls_base - page, tls_base);
+  if (NULL == found)
+    found = tls_key_slot_scan_up(key, tls_base, tls_base + page);
+#  elif !defined(GC_TLS_SLOT_BIONIC_TLS)
+  found = tls_key_slot_scan_up(key, tls_base, tls_base + page);
+  if (NULL == found)
+    found = tls_key_slot_scan_down(key, tls_base - page, tls_base);
+#  else
+  /*
+   * On Android 10+ the direct layout lookup above should succeed.  Keep the
+   * known-safe upward scan as a checked fallback for vendor bionic variants.
+   */
+  if (NULL == found && (android_api_level >= 29 || android_api_level < 0))
+    found = tls_key_slot_scan_up(key, tls_base, tls_base + page);
+#  endif
   pthread_setspecific(key, NULL);
-  return NULL;
+  return NULL == found ? 0 : (GC_signed_word)((char *)found - tls_base);
+}
+
+/*
+ * The offset is probed on whichever thread runs `init_tls_gc_array_offset()`
+ * first; re-check on every other thread that it really addresses that
+ * thread's slot, rather than trusting the layout to be thread-invariant.
+ * This is what turns a probe that only happened to succeed on the first
+ * thread (see the `ABORT` in `init_tls_gc_array_offset()`) into a loud
+ * failure instead of silent corruption of an unrelated key's storage.  It
+ * needs the key to be shared by all threads, which is why
+ * `GC_arrays_pthread_key` is not thread-local.
+ */
+static GC_bool
+tls_key_slot_offset_verify(pthread_key_t key, char *tls_base,
+                           GC_signed_word offset)
+{
+  GC_bool result;
+
+  pthread_setspecific(key, (void *)GC_TLS_KEY_MAGIC1);
+  result = tls_key_slot_verify(key, (size_t *)(tls_base + offset));
+  pthread_setspecific(key, NULL);
+  return result;
+}
+
+/*
+ * The offset is a single process-wide value, so exactly one thread may
+ * create the key and probe for it.  `GC_init()` runs once per thread (it is
+ * guarded by the thread-local `GC_arrays_instance._is_initialized`) and gets
+ * here long before the allocator lock is usable, hence `pthread_once()`
+ * rather than `LOCK()`.  Racing threads would otherwise each create a key of
+ * their own, probe the corresponding (different) offsets and all store the
+ * result; every loser would then reach its arrays through the winner's
+ * offset, i.e. through an unrelated key's slot.
+ */
+static pthread_once_t tls_gc_array_offset_once = PTHREAD_ONCE_INIT;
+
+static void
+init_tls_gc_array_offset(void)
+{
+  GC_signed_word offset;
+
+  if (pthread_key_create(&GC_arrays_pthread_key, NULL) != 0)
+    ABORT("failed to create pthread_key");
+  offset = check_pthread_key(GC_arrays_pthread_key, GC_tls_base_address());
+  if (!offset) {
+    /*
+     * Reached when the slot could not be located within a page of the
+     * thread pointer.  With glibc that happens once the key index is
+     * >= PTHREAD_KEY_2NDLEVEL_SIZE (32), i.e. when 32 or more keys were
+     * live at the moment the key above was created: those slots live in
+     * per-thread malloc'ed blocks, which no single fixed offset can
+     * address.  Beware that such a block may still happen to land within
+     * the searched range on this particular thread, in which case the
+     * probe succeeds here and yields an offset that is wrong on every
+     * other thread -- which is what the `tls_key_slot_offset_verify()`
+     * call in `GC_init()` is there to catch.  The real remedy is to keep
+     * the key index low, which creating the key from a library constructor
+     * would achieve.  bionic keeps all PTHREAD_KEYS_MAX slots inline, so
+     * it has no such limit.
+     */
+    ABORT("failed to check pthread_key");
+  }
+  GC_tls_gc_array_offset = offset;
 }
 #endif
 
@@ -1101,7 +1343,7 @@ GC_init(void)
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
   char *tls_base = GC_tls_base_address();
-  word tls_distance = (char *)&GC_arrays_instance - tls_base;
+  GC_signed_word tls_distance = (char *)&GC_arrays_instance - tls_base;
   if (GC_tls_gc_array_offset) {
     if (tls_distance != GC_tls_gc_array_offset) {
       ABORT("there is a error calc tls offset");
@@ -1113,27 +1355,17 @@ GC_init(void)
   memcpy(&GC_arrays_instance.GC_obj_kinds_instance, &GC_obj_kinds_instance,
          sizeof(GC_obj_kinds_instance));
 #elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
-  char *tls_base = GC_tls_base_address();
-  int key_create_return;
-  if (!GC_tls_gc_array_offset) {
-    key_create_return = pthread_key_create(&GC_arrays_pthread_key, NULL);
-    if (key_create_return) {
-      ABORT("failed to create pthread_key");
-    }
-
-    {
-      size_t *ptr = check_pthread_key(GC_arrays_pthread_key, tls_base);
-
-      if (!ptr) {
-        ABORT("failed to check pthread_key");
-      }
-      GC_tls_gc_array_offset = (size_t)ptr - (size_t)tls_base;
-    }
-  }
+  if (pthread_once(&tls_gc_array_offset_once, init_tls_gc_array_offset) != 0)
+    ABORT("failed to probe pthread_key TLS slot");
 
   {
-    size_t **ptr = (size_t **)(GC_tls_base_address() + GC_tls_gc_array_offset);
+    char *tls_base = GC_tls_base_address();
+    size_t **ptr;
 
+    if (!tls_key_slot_offset_verify(GC_arrays_pthread_key, tls_base,
+                                    GC_tls_gc_array_offset))
+      ABORT("pthread_key TLS slot is at a different offset on this thread");
+    ptr = (size_t **)(tls_base + GC_tls_gc_array_offset);
     *ptr = (size_t *)&GC_arrays_instance;
   }
   memcpy(&GC_arrays_instance.GC_obj_kinds_instance, &GC_obj_kinds_instance,

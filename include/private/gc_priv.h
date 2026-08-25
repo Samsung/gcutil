@@ -2705,27 +2705,30 @@ struct _GC_arrays {
   struct obj_kind GC_obj_kinds_instance[MAXOBJKINDS];
 #endif
 
-#  define GC_is_enumerate_reachable_objects GC_arrays._is_enumerate_reachable_objects
+#define GC_is_enumerate_reachable_objects \
+  GC_arrays._is_enumerate_reachable_objects
   GC_bool _is_enumerate_reachable_objects;
 };
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS)
-GC_EXTERN word GC_tls_gc_array_offset;
+GC_EXTERN GC_signed_word GC_tls_gc_array_offset;
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
 #  define GC_arrays                                 \
     (*(((struct _GC_arrays *)(GC_tls_base_address() \
                               + GC_tls_gc_array_offset))))
 #  define GC_obj_kinds (GC_arrays.GC_obj_kinds_instance)
 #elif defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
-GC_EXTERN word GC_tls_gc_array_offset;
+GC_EXTERN GC_signed_word GC_tls_gc_array_offset;
 GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays_instance;
-GC_API_PRIV MAY_THREAD_LOCAL pthread_key_t GC_arrays_pthread_key;
+/* Shared by all threads: the key index is process-wide, and every thread */
+/* needs it to re-verify GC_tls_gc_array_offset against its own slot.     */
+GC_API_PRIV pthread_key_t GC_arrays_pthread_key;
 #  define GC_arrays              \
     (*(((struct _GC_arrays *)(*( \
         (size_t *)(GC_tls_base_address() + GC_tls_gc_array_offset))))))
 #  define GC_obj_kinds (GC_arrays.GC_obj_kinds_instance)
 #else
-GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
+  GC_API_PRIV MAY_THREAD_LOCAL struct _GC_arrays GC_arrays;
 #endif
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
@@ -2793,7 +2796,7 @@ GC_INNER void *GC_get_mem(size_t lb);
     ((void *)PTR_ALIGN_UP((ptr_t)calloc(1, SIZET_SAT_ADD(lb, HBLKSIZE - 1)), \
                           HBLKSIZE))
 #elif !defined(GET_MEM)
-GC_INNER void *GC_unix_get_mem(size_t lb);
+  GC_INNER void *GC_unix_get_mem(size_t lb);
 #  define GET_MEM(lb) GC_unix_get_mem(lb)
 #  define NEED_UNIX_GET_MEM
 #endif

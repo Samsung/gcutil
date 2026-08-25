@@ -411,14 +411,89 @@ bare-metal / non-pthread environments).
 #### Option B: `ENABLE_TLS_ACCESS_BY_PTHREAD_KEY`
 
 1. **Locate pthread TCB key-slot (misc.c):** Write a magic value to the first
-   available `pthread_key_t`, then scan the thread's memory near the TCB for that
-   magic value. The offset where it's found is the key-slot offset. Cache it.
-   Use `getpagesize()` for the scan window size (not a hardcoded 4KB). On LP64,
-   use a 64-bit magic constant.
+   available `pthread_key_t`, then find the word holding it at a constant
+   offset from the thread pointer. Cache that offset. Use `getpagesize()` for
+   the scan window size (not a hardcoded 4KB). On LP64, use a 64-bit magic
+   constant. The details below are all load-bearing — the naive version of
+   this step is subtly wrong on half the supported targets.
+
+   - **Scan direction is a property of the libc, not of the architecture.**
+     glibc places `struct pthread` at the thread pointer on TLS_TCB_AT_TP
+     targets (x86, x86_64) but immediately *below* it on TLS_DTV_AT_TP
+     targets (arm, aarch64, riscv), where the offset is therefore negative.
+     bionic keeps `bionic_tls` *above* the thread pointer on every
+     architecture. Since glibc/aarch64 and bionic/aarch64 disagree, the
+     direction cannot be selected by `#if` on the target arch alone. Scan
+     both directions, one page each — but start with the direction the
+     libc/arch pair makes likely (`GC_TLS_KEY_SLOT_BELOW_TP`): a scan that
+     fails walks its whole page, and neither libc guarantees that much
+     mapped memory on the far side (glibc/TLS_TCB_AT_TP puts `struct
+     pthread` at the very end of the thread's stack mapping, so the page
+     above the thread pointer ends inside it). Walk the backward range from
+     high to low: its low end is already past the start of the thread
+     descriptor (the thread's own stack, or data below the initial break)
+     and is where stale magics live.
+
+   - **Verify every candidate with a second magic.** The value was just
+     passed to `pthread_setspecific()`, so a copy may have been spilled onto
+     the stack; only the real slot follows the key to a second value. When a
+     candidate fails, restore the first magic and *keep scanning* — bailing
+     out turns a stale copy encountered early into a false negative.
+
+   - **On bionic, the offset can also be derived — use it as the fallback.**
+     `bionic_tls` hangs off a thread-pointer slot of a known index
+     (`TLS_SLOT_BIONIC_TLS`: −1 on arm/arm64, 9 on x86/x86_64, −9 on riscv)
+     and `pthread_key_data_t key_data[]` is its first member, so the slot
+     address follows from the key index, with no page limit on how far the
+     index may reach — that is the one thing the scan cannot do, and the
+     reason to keep this path. It runs only *after* the scan, though:
+     scanning reads memory the thread is known to own, while this
+     dereferences a word whose meaning rests on the slot index being right
+     for this bionic. Both the index and the layout are implementation
+     details, so reject the values that cannot be `bionic_tls` (null,
+     misaligned, absurdly far from the thread pointer, key index past
+     `PTHREAD_KEYS_MAX`) before dereferencing one, and verify the result
+     with the magic like any other candidate.
+
+   - **`GC_tls_gc_array_offset` must be signed** (`GC_signed_word`, not
+     `word`): it is negative on glibc TLS_DTV_AT_TP targets.
+
+   - **Do the key creation and the probe under `pthread_once()`.** `GC_init()`
+     runs once per thread and reaches this point long before the allocator
+     lock is usable, so the "is the offset already known" check cannot be a
+     plain unsynchronised global read. Racing threads would each create a key
+     of their own, probe the corresponding (different) offsets and all store
+     the result; every loser would then reach its arrays through the winner's
+     offset, i.e. through an unrelated key's slot.
+
+   - **Re-verify the offset on every thread.** The probe runs on one thread
+     only, so each later thread writes the magic through the (now
+     process-wide) key and checks that it shows up at
+     `GC_tls_base_address() + GC_tls_gc_array_offset` before storing
+     `&GC_arrays_instance` there. Two `pthread_setspecific()` calls per
+     thread, once. Without it, an offset that is right only on the probing
+     thread silently turns every other thread's arrays access into a write
+     through an unrelated key's slot; with it, that case aborts.
+     `GC_arrays_pthread_key` is a plain global (not `MAY_THREAD_LOCAL`) so
+     that the other threads have the key to check with.
+
+   - **Known limitation (glibc only).** Once 32 or more keys
+     (`PTHREAD_KEY_2NDLEVEL_SIZE`) are live at the moment GC creates its key,
+     the slot moves into a per-thread `malloc`ed block that no fixed offset
+     can address, and `GC_init()` aborts. Such a block can still land inside
+     the searched range on the probing thread, in which case the probe
+     *succeeds* and yields an offset that is wrong on every other thread —
+     the per-thread re-verification above turns that into an abort as well,
+     but it is still an abort. Creating the key from a library constructor,
+     so the index stays low, would be the real remedy; not done (it would
+     need a separate "created" flag, since glibc hands out key index 0 as a
+     valid key).
 
 2. **Store `&GC_arrays_instance` (misc.c):** Once per thread, store the address
    of this thread's `GC_arrays_instance` into the located key-slot. Future
-   accesses read it back via the cached offset.
+   accesses read it back via the cached offset. A plain store is correct here;
+   going through `pthread_setspecific()` only buys the `seq` field, which
+   nothing reads because the key is private to the collector.
 
 3. **Merge `GC_obj_kinds` into `struct _GC_arrays` (gc_priv.h):** Add a
    `GC_obj_kinds_instance[MAXOBJKINDS]` field to `struct _GC_arrays` so only one
@@ -440,6 +515,15 @@ TLS offset cache) for the early-return check.
 ### Verification
 - 30-file compile in release+debug × {no flag, BY_ADDRESS, BY_PTHREAD_KEY}, all under GC_THREAD_ISOLATE
 - `readelf -sW` confirms `GC_arrays_instance` / `GC_arrays_pthread_key` land as TLS symbols
+- misc.c must also compile with the NDK cross compilers (`aarch64-linux-android*-clang`,
+  `armv7a-linux-androideabi*-clang`), which is what exercises the `__BIONIC__` path.
+  Confirm the path is really in the translation unit rather than silently
+  preprocessed away: `<ndk-clang> -E ... misc.c | grep -c tls_key_slot_bionic`
+  must be non-zero for Android and zero for the host compiler.
+- No test in `tests/` covers this mechanism. A proper one would `dlopen` the
+  collector and have N threads each run `GC_init()` and check they agree on the
+  offset, run on both a TLS_TCB_AT_TP and a TLS_DTV_AT_TP target. Its absence is
+  why the wrong-scan-direction bug on glibc/arm only surfaced on-device.
 
 **Reference:** `git diff fba57076..425c8c86`
 **Commits:** `65ee07f8` ← `4e50abb8`, `0daf8a4f` ← `434bc574`,
@@ -861,6 +945,11 @@ reflected in current upstream bdwgc, so skip them entirely:
 
 - **Windows VirtualAlloc retry-loop** (F4 step 6): never compiled/tested
   (no Windows toolchain available).
+- **F11 key-index hardening**: create `GC_arrays_pthread_key` from a library
+  constructor so the glibc first-level-block limit becomes unreachable. Needs
+  the key to become a plain global plus a separate "created" flag.
+- **F11 multi-thread/dlopen test**: see F11 Verification — nothing in `tests/`
+  exercises the TLS offset probe.
 - **`test.sh`** (the actual test suite): not yet run — only manual clang
   compile+link+smoke-test verification has been performed. The real CMake
   build has not been invoked this session either.
