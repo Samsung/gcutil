@@ -100,14 +100,32 @@ GC_init_finalized_malloc(void)
   GC_finalized_kind
       = GC_new_kind_inner(GC_new_free_list_inner(), GC_DS_LENGTH, TRUE, TRUE);
   GC_ASSERT(GC_finalized_kind != 0);
+  /*
+   * Escargot note: upstream registers this with mark_unconditionally=TRUE so
+   * that fields a finalizer reads stay valid even for a garbage object. We
+   * ship it as FALSE instead: every GC_finalized_malloc() caller in this tree
+   * only touches native (non-GC) handles from its closure, never a separately
+   * GC-managed pointer, so that guarantee buys nothing here. Its cost is real:
+   * with mark_unconditionally=TRUE, an unconditional visit to a dead object
+   * treats any pointer inside its (conservatively scanned, GC_DS_LENGTH)
+   * memory as a live reference -- including one the object's own property
+   * storage holds back to itself. A script as simple as
+   * `let d = new Intl.DateTimeFormat(); d.self = d; d = null;` then
+   * resurrects `d` forever, because the forced scan finds `d.self` and marks
+   * `d` reachable again every single cycle. mark_unconditionally=FALSE means
+   * this kind is only ever mark-scanned when actually reachable, so a
+   * self-referencing island with no external roots is collected normally;
+   * GC_finalized_disclaim() still runs during reclaim regardless of this
+   * flag, so finalization itself is unaffected.
+   */
   GC_register_disclaim_proc_inner(GC_finalized_kind, GC_finalized_disclaim,
-                                  TRUE);
+                                  FALSE);
 
   GC_finalized_ptrfree_kind
       = GC_new_kind_inner(GC_new_free_list_inner(), GC_DS_LENGTH, FALSE, TRUE);
   GC_ASSERT(GC_finalized_ptrfree_kind != 0);
-  GC_register_disclaim_proc_inner(GC_finalized_ptrfree_kind, GC_finalized_disclaim,
-                                  TRUE);
+  GC_register_disclaim_proc_inner(GC_finalized_ptrfree_kind,
+                                  GC_finalized_disclaim, TRUE);
   UNLOCK();
 }
 

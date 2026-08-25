@@ -654,6 +654,71 @@ dereference; the array-to-pointer decay yields the symbol's address directly.
 
 ---
 
+#### F15d. `GC_finalized_kind` must register with `mark_unconditionally=FALSE` (fnlz_mlc.c)
+
+### What to do
+
+**fnlz_mlc.c, `GC_init_finalized_malloc()`:** change the disclaim registration
+for the plain (non-atomic) kind from:
+
+```c
+GC_register_disclaim_proc_inner(GC_finalized_kind, GC_finalized_disclaim, TRUE);
+```
+
+to:
+
+```c
+GC_register_disclaim_proc_inner(GC_finalized_kind, GC_finalized_disclaim, FALSE);
+```
+
+Leave `GC_finalized_ptrfree_kind`'s registration (F15b) untouched -- it is
+pointer-free, so `mark_unconditionally` is a no-op there either way.
+
+### Why this matters
+
+Per `docs/disclaim_guide.md` §7, `mark_from_all`/`mark_unconditionally` should
+only be `1` when the disclaim callback itself dereferences another GC object
+that must still be valid at disclaim time. Every `GC_finalized_malloc()` caller
+in this tree (`src/intl/Intl*.cpp`, `src/runtime/Temporal*Object.cpp`) only
+closes a native ICU handle stored inline in the object -- none needs that
+guarantee -- so upstream's hardcoded `TRUE` buys nothing here and is pure risk.
+
+The risk is not hypothetical. `mark_unconditionally=TRUE` + `GC_DS_LENGTH`
+(conservative whole-object scan) means a *garbage* object of this kind still
+gets its entire memory treated as strong references, including whatever its
+own property storage holds -- so a plain user script:
+
+```js
+let d = new Intl.DateTimeFormat();
+d.self = d;
+d = null;
+```
+
+resurrects `d` forever: the forced scan of the dead object finds the `self`
+slot pointing back at itself and marks it reachable again, every single GC
+cycle, with no diagnostic (this path does not go through `GC_finalize()`'s
+ordinary finalizer cycle-`WARN`; disclaim+`mark_unconditionally` has no such
+safety net). This is the exact same immortal-object-pair shape as the
+Escargot-side `ByteCodeBlock`/`BackingStore` mark-proc leaks fixed in the
+`perf` branch around 2026-08 -- there the fix was per-field gating on
+`GC_is_marked()`, but here it is simpler: nothing in this kind's disclaim
+closures needed the guarantee in the first place, so just turn it off.
+
+`GC_finalized_disclaim()` itself does not depend on `mark_unconditionally` --
+it is invoked from the ordinary disclaim/reclaim path regardless -- so
+finalization (native handle cleanup) is unaffected by this change.
+
+### Verification
+
+`test/cctest/testleak.cpp`, `LeakCheck.IntlFinalizedMallocSelfCycle` (Escargot
+tree, not upstream bdwgc): repeatedly runs the `d.self = d` script above on a
+shared VM/context and asserts GC heap size does not grow. Fails before this
+change, passes after.
+
+**Commits:** (this fix, applied directly on top of whatever branch needs it)
+
+---
+
 ## F16. Raise MAXOBJKINDS under SMALL_CONFIG
 
 **Depends on:** nothing (independent)
