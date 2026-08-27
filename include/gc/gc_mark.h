@@ -151,6 +151,26 @@ GC_API GC_MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr;
 GC_API GC_MAY_THREAD_LOCAL void *GC_greatest_plausible_heap_addr;
 
 /**
+ * Store the current values of `GC_least_plausible_heap_addr` and
+ * `GC_greatest_plausible_heap_addr` to `*least` and `*greatest`,
+ * respectively.  Provided because the two variables above are
+ * thread-local when the collector is built with `GC_THREAD_ISOLATE`,
+ * and thread-local data cannot be imported across a shared library
+ * boundary on Windows (MSVC has no working `dllimport` for TLS
+ * variables).  A client outside the collector library should call this
+ * and use `GC_MARK_AND_PUSH_BOUNDED` instead of `GC_MARK_AND_PUSH`.
+ * Unsynchronized; expected to be called from a mark procedure, which
+ * already runs with the allocator lock held.  The bounds only widen,
+ * and never while a mark procedure is running (they are updated when
+ * a heap section is added), so a mark procedure may fetch them once
+ * and reuse them for the whole call.  They should not be cached across
+ * calls, though, as the heap may grow in between.
+ */
+GC_API void GC_CALL GC_get_plausible_heap_bounds(void ** /* `least` */,
+                                                 void ** /* `greatest` */)
+    GC_ATTR_NONNULL(1) GC_ATTR_NONNULL(2);
+
+/**
  * Specify the pointer address mask.  Works only if the collector is
  * built with `DYNAMIC_POINTER_MASK` macro defined.  These primitives
  * are normally needed only to support systems that use high-order
@@ -193,12 +213,24 @@ GC_API struct GC_ms_entry *GC_CALL GC_mark_and_push(
     struct GC_ms_entry * /* `mark_stack_limit` */, void ** /* `src` */)
     GC_ATTR_NONNULL(1) GC_ATTR_NONNULL(2) /* `GC_ATTR_NONNULL(3)` */;
 
-#define GC_MARK_AND_PUSH(obj, msp, lim, src)                       \
-  (GC_ADDR_LT((char *)GC_least_plausible_heap_addr, (char *)(obj)) \
-           && GC_ADDR_LT((char *)(obj),                            \
-                         (char *)GC_greatest_plausible_heap_addr)  \
-       ? GC_mark_and_push(obj, msp, lim, src)                      \
+/**
+ * Same as `GC_MARK_AND_PUSH` but taking the heap bounds as arguments
+ * instead of reading `GC_least_plausible_heap_addr` and
+ * `GC_greatest_plausible_heap_addr` directly; `least` and `greatest`
+ * are expected to be filled in by `GC_get_plausible_heap_bounds()`.
+ * This is the form to use from outside the collector library: it does
+ * not reference the (possibly thread-local, thus non-importable) heap
+ * bound variables, and it hoists their fetch out of a marking loop.
+ */
+#define GC_MARK_AND_PUSH_BOUNDED(obj, msp, lim, src, least, greatest) \
+  (GC_ADDR_LT((char *)(least), (char *)(obj))                         \
+           && GC_ADDR_LT((char *)(obj), (char *)(greatest))           \
+       ? GC_mark_and_push(obj, msp, lim, src)                         \
        : (msp))
+
+#define GC_MARK_AND_PUSH(obj, msp, lim, src)                                 \
+  GC_MARK_AND_PUSH_BOUNDED(obj, msp, lim, src, GC_least_plausible_heap_addr, \
+                           GC_greatest_plausible_heap_addr)
 
 GC_API void GC_CALL GC_push_obj_descr(void * /* `obj` */,
                                       GC_word /* `descr` */);

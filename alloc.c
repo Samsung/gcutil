@@ -1712,8 +1712,24 @@ GC_print_heap_sects(void)
 }
 #endif /* !NO_DEBUGGING */
 
-GC_API MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr = MAKE_CPTR(GC_WORD_MAX);
+GC_API MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr
+    = MAKE_CPTR(GC_WORD_MAX);
 GC_API MAY_THREAD_LOCAL void *GC_greatest_plausible_heap_addr = NULL;
+
+/*
+ * Note: no locking here.  The two variables above are read without the
+ * allocator lock everywhere else too (e.g. by `GC_MARK_AND_PUSH`), and
+ * this is normally called from a mark procedure, which already runs
+ * with the lock held.
+ */
+GC_API void GC_CALL
+GC_get_plausible_heap_bounds(void **least, void **greatest)
+{
+  GC_ASSERT(least != NULL);
+  GC_ASSERT(greatest != NULL);
+  *least = GC_least_plausible_heap_addr;
+  *greatest = GC_greatest_plausible_heap_addr;
+}
 
 STATIC MAY_THREAD_LOCAL word GC_max_heapsize = 0;
 

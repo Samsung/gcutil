@@ -53,6 +53,7 @@ Step  Feature  Description                          Depends on
 16    F16      Raise MAXOBJKINDS under SMALL_CONFIG  (independent)
 17    F17      GCUTIL_NOSYS_BAREMETAL CMake option   (independent)
 18    F18      GC_push_marked honours GC_DS_PROC     F1
+19    F19      Getter for the plausible heap bounds  F10
 ```
 
 Dependency graph:
@@ -70,6 +71,7 @@ F15: standalone (F15b needs F9 for GCUtil.h)
 F16: standalone (independent)
 F17: standalone (independent)
 F18: needs F1 (custom mark procs); only observable together with F4
+F19: needs F10 (the heap bounds are only thread-local under GC_THREAD_ISOLATE)
 ```
 
 ---
@@ -375,6 +377,9 @@ This is the largest feature. Goal: make every GC global variable thread-local
     (such as `GC_least_plausible_heap_addr` and `GC_greatest_plausible_heap_addr` in
     `alloc.c`) keep their `GC_API` specifier on their definitions when they are
     made `MAY_THREAD_LOCAL` to match their declarations in `include/gc/gc_mark.h`.
+    `GC_API` alone is not enough for a client in *another* module, though:
+    thread-local data cannot be imported across a DLL boundary on Windows, so
+    these two also need the getter added in F19.
 
 ### Verification
 - Compile all 30 .c files with `-DGC_THREAD_ISOLATE=1`
@@ -929,6 +934,82 @@ default mark stack size. Useful knobs while bisecting: `GC_PRINT_STATS=1` shows
 `Mark stack overflow` lines, and `GC_INITIAL_HEAP_SIZE=2000000000` or
 `GC_FREE_SPACE_DIVISOR=1` makes the failure disappear by changing GC timing.
 After the fix the test passes with overflows still occurring.
+
+**Commits:** (this fix, applied directly on top of whatever branch needs it)
+
+---
+
+## F19. Getter for the plausible heap bounds (cross-module mark procs)
+
+**Depends on:** F10 (`GC_least_plausible_heap_addr` /
+`GC_greatest_plausible_heap_addr` only become thread-local there).
+
+### What to do
+
+**include/gc/gc_mark.h:** Split the bounds check out of `GC_MARK_AND_PUSH` into
+a new `GC_MARK_AND_PUSH_BOUNDED(obj, msp, lim, src, least, greatest)` macro and
+define `GC_MARK_AND_PUSH` in terms of it, so the predicate has one definition.
+Declare the new getter:
+
+```c
+GC_API void GC_CALL GC_get_plausible_heap_bounds(void ** /* `least` */,
+                                                 void ** /* `greatest` */)
+    GC_ATTR_NONNULL(1) GC_ATTR_NONNULL(2);
+```
+
+**alloc.c:** Define it next to the two variables. No locking — they are read
+without the allocator lock everywhere else too, and a mark procedure already
+runs with the lock held (taking it here would deadlock).
+
+### Why this matters
+
+`GC_MARK_AND_PUSH` reads the two bound variables directly, and F10 makes them
+`__declspec(thread)` on MSVC. **Windows cannot `dllimport` thread-local data**,
+so any embedder that writes a custom mark procedure (Escargot's
+`WeakMapObject::markEphemerons`) fails to link against a gc-lib DLL. Building
+gc-lib as a static library instead is *not* a fix: gc-lib is linked `PUBLIC`
+into escargot, so a static collector is duplicated into every consumer of a
+shared escargot, and under F10 each module then has its own thread-local
+`GC_arrays`/`GC_obj_kinds`/heap. Whichever module runs `GC_init()` first, the
+other one marks against an all-zero `GC_obj_kinds` — on the same thread. Two
+collectors in one process is a far worse failure than a link error.
+
+A client fetches the bounds once before its marking loop:
+
+```c
+void *least, *greatest;
+GC_get_plausible_heap_bounds(&least, &greatest);
+for (...) {
+  msp = GC_MARK_AND_PUSH_BOUNDED(obj, msp, lim, src, least, greatest);
+}
+```
+
+That is also *faster* than the original macro, which re-reads two TLS variables
+(`_tls_index` load, TEB dereference, indexing) on every iteration.
+
+### Hoisting the bounds is safe
+
+The two variables are assigned in exactly two places, both on the heap-growth
+path: `GC_add_to_heap()` and `GC_expand_hp_inner()` (alloc.c). No heap section
+is added while a mark procedure runs (the allocator lock is held; mark stack
+growth goes through `GC_scratch_alloc`, which does not touch these), and under
+F10 the heap is per-thread, so no other thread can widen them either. bdwgc
+itself does the same hoist internally — `GC_push_all_eager()`,
+`GC_push_all_stack()` and friends cache them into `least_ha`/`greatest_ha`
+locals and `#define` over the names for the loop body.
+
+The bounds may only *widen*, and they do so between collections, so a client
+must re-fetch them on every mark procedure invocation; caching them in a static
+would eventually skip objects in a newly added heap section, i.e. drop live
+objects.
+
+### Verification
+
+- `grep -n 'plausible_heap_addr' include/gc/gc_mark.h` — only the variable
+  declarations and the getter; no consumer outside the library reads them.
+- On a shared-library build, the collector must be exactly one module:
+  `nm -D`/`dumpbin /exports` should show `GC_init` in gc-lib only, not in the
+  library that embeds it.
 
 **Commits:** (this fix, applied directly on top of whatever branch needs it)
 
