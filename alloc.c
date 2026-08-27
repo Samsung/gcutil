@@ -1712,8 +1712,8 @@ GC_print_heap_sects(void)
 }
 #endif /* !NO_DEBUGGING */
 
-MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr = MAKE_CPTR(GC_WORD_MAX);
-MAY_THREAD_LOCAL void *GC_greatest_plausible_heap_addr = NULL;
+GC_API MAY_THREAD_LOCAL void *GC_least_plausible_heap_addr = MAKE_CPTR(GC_WORD_MAX);
+GC_API MAY_THREAD_LOCAL void *GC_greatest_plausible_heap_addr = NULL;
 
 STATIC MAY_THREAD_LOCAL word GC_max_heapsize = 0;
 

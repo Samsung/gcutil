@@ -371,6 +371,11 @@ This is the largest feature. Goal: make every GC global variable thread-local
 10. **`MAY_THREAD_LOCAL volatile`:** Ensure there is a space between
     `MAY_THREAD_LOCAL` and `volatile` (original had `MAY_THREAD_LOCALvolatile`).
 
+11. **`GC_API` for exported thread-local globals:** Ensure public API globals
+    (such as `GC_least_plausible_heap_addr` and `GC_greatest_plausible_heap_addr` in
+    `alloc.c`) keep their `GC_API` specifier on their definitions when they are
+    made `MAY_THREAD_LOCAL` to match their declarations in `include/gc/gc_mark.h`.
+
 ### Verification
 - Compile all 30 .c files with `-DGC_THREAD_ISOLATE=1`
 - `readelf -sW` audit: 0 non-TLS `GC_`-prefixed `OBJECT` symbols
