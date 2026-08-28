@@ -74,11 +74,46 @@ typedef struct hce {
   hdr *hce_hdr;
 } hdr_cache_entry;
 
-#define HDR_CACHE_SIZE 8 /*< a power of two */
+/*
+ * A power of two.  The misses this cache takes during marking are capacity
+ * misses, not cold-start ones, so its size is what decides the hit rate.
+ * A per-call cache had to stay tiny because every call zeroed it; the shared
+ * cache below is zeroed only when a block mapping changes, which is what
+ * makes this size affordable.  Tuned by measurement, re-measure before
+ * changing it.
+ */
+#define HDR_CACHE_SIZE 64
 
-#define DECLARE_HDR_CACHE hdr_cache_entry hdr_cache[HDR_CACHE_SIZE]
+#ifdef PARALLEL_MARK
+/* Keep a private per-call cache: marker threads share one heap, so a
+ * single shared cache would need synchronization or would ping-pong
+ * between threads. */
+#  define DECLARE_HDR_CACHE hdr_cache_entry hdr_cache[HDR_CACHE_SIZE]
+#  define INIT_HDR_CACHE BZERO(hdr_cache, sizeof(hdr_cache))
+#else
+/*
+ * Resolve the per-heap cache once per call instead of zeroing a fresh
+ * one; entries then survive across calls, so a referent looked up by
+ * one call is a hit for the next.  See `GC_hdr_cache` in gc_priv.h for
+ * how it is kept coherent.
+ */
+#  define DECLARE_HDR_CACHE hdr_cache_entry *const hdr_cache = GC_hdr_cache
+#  define INIT_HDR_CACHE (void)0
+#endif
 
-#define INIT_HDR_CACHE BZERO(hdr_cache, sizeof(hdr_cache))
+/*
+ * Drop every cached block-to-header mapping.  Two kinds of events require
+ * this, and both are block-level, i.e. orders of magnitude rarer than the
+ * pointer marking the cache serves:
+ *   - a mapping is created or destroyed (`GC_install_header`,
+ *     `GC_install_counts`, `GC_remove_header`, `GC_remove_counts`);
+ *   - a block becomes free (`GC_freehblk`).  A cache hit deliberately skips
+ *     the checks `GC_header_cache_miss` performs, `HBLK_IS_FREE` among them,
+ *     so an entry cached while the block was in use would let a later mark
+ *     phase push the contents of a free block.
+ * A per-call cache needed neither, as it could not outlive a mark procedure.
+ */
+#define GC_INVALIDATE_HDR_CACHE() BZERO(GC_hdr_cache, sizeof(GC_hdr_cache))
 
 #define HCE(h) (hdr_cache + ((ADDR(h) >> LOG_HBLKSIZE) & (HDR_CACHE_SIZE - 1)))
 

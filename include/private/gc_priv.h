@@ -2190,6 +2190,17 @@ struct _GC_arrays {
 #define GC_all_nils GC_arrays._all_nils
   bottom_index *_all_nils;
 
+/*
+ * The marking header cache, shared by `GC_mark_from` and by every mark
+ * procedure (including custom ones in mark.c).  Living per heap instead
+ * of per call lets entries survive across calls, so a referent looked
+ * up by one call can still be a hit for the next.  For what invalidates
+ * it, and why a per-call cache needed no invalidation at all, see
+ * `GC_INVALIDATE_HDR_CACHE` in gc_hdrs.h.
+ */
+#define GC_hdr_cache GC_arrays._hdr_cache
+  hdr_cache_entry _hdr_cache[HDR_CACHE_SIZE];
+
 #define GC_scan_ptr GC_arrays._scan_ptr
   struct hblk *_scan_ptr;
 

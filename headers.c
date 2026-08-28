@@ -273,6 +273,9 @@ GC_install_header(const struct hblk *h)
   hdr *result;
 
   GC_ASSERT(I_HOLD_LOCK());
+  /* This and the three functions below are where a block-to-header  */
+  /* mapping is created or destroyed; see `GC_INVALIDATE_HDR_CACHE`. */
+  GC_INVALIDATE_HDR_CACHE();
   if (UNLIKELY(!get_index(ADDR(h))))
     return NULL;
 
@@ -291,6 +294,8 @@ GC_INNER GC_bool
 GC_install_counts(struct hblk *h, size_t sz /* bytes */)
 {
   struct hblk *hbp;
+
+  GC_INVALIDATE_HDR_CACHE();
 
   for (hbp = h; ADDR_LT((ptr_t)hbp, (ptr_t)h + sz); hbp += BOTTOM_SZ) {
     if (!get_index(ADDR(hbp)))
@@ -315,6 +320,9 @@ GC_INNER void
 GC_remove_header(const struct hblk *h)
 {
   hdr **ha;
+
+  GC_INVALIDATE_HDR_CACHE();
+
   GET_HDR_ADDR(h, ha);
   free_hdr(*ha);
   *ha = NULL;
@@ -324,6 +332,8 @@ GC_INNER void
 GC_remove_counts(const struct hblk *h, size_t sz /* bytes */)
 {
   const struct hblk *hbp;
+
+  GC_INVALIDATE_HDR_CACHE();
 
   if (sz <= HBLKSIZE)
     return;

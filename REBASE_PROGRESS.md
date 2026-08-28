@@ -54,6 +54,7 @@ Step  Feature  Description                          Depends on
 17    F17      GCUTIL_NOSYS_BAREMETAL CMake option   (independent)
 18    F18      GC_push_marked honours GC_DS_PROC     F1
 19    F19      Getter for the plausible heap bounds  F10
+20    F20      Header cache optimization             (independent)
 ```
 
 Dependency graph:
@@ -72,6 +73,7 @@ F16: standalone (independent)
 F17: standalone (independent)
 F18: needs F1 (custom mark procs); only observable together with F4
 F19: needs F10 (the heap bounds are only thread-local under GC_THREAD_ISOLATE)
+F20: standalone (independent)
 ```
 
 ---
@@ -1012,6 +1014,29 @@ objects.
   library that embeds it.
 
 **Commits:** (this fix, applied directly on top of whatever branch needs it)
+
+---
+
+## F20. Header cache optimization
+
+**Depends on:** nothing (independent)
+
+### What to do
+
+1. **`include/private/gc_hdrs.h`:**
+   - Increase `HDR_CACHE_SIZE` to `64`.
+   - Update `DECLARE_HDR_CACHE` and `INIT_HDR_CACHE` definitions. Under single-thread (non-`PARALLEL_MARK`) configurations, use the global `GC_hdr_cache` without zero-clearing it per call to maximize hit rates and eliminate initialization overhead.
+   - For `PARALLEL_MARK` configurations, fall back to a per-call local `hdr_cache` array initialized with `BZERO` to avoid thread contention and cache ping-pong.
+
+2. **`allchblk.c`:**
+   - Call `GC_INVALIDATE_HDR_CACHE()` in `GC_freehblk(struct hblk *hbp)` to invalidate the cache when a block is freed.
+
+3. **`headers.c`:**
+   - Call `GC_INVALIDATE_HDR_CACHE()` in `GC_install_header()`, `GC_install_counts()`, `GC_remove_header()`, and `GC_remove_counts()` to keep the global cache coherent when block-to-header mappings change.
+
+### Verification
+
+Ensure that under single-thread configurations, the global cache survives across calls and is correctly invalidated upon block mapping changes.
 
 ---
 

@@ -1264,6 +1264,12 @@ GC_freehblk(struct hblk *hbp)
   hdr *hhdr, *prevhdr, *nexthdr;
   size_t size;
 
+  /* This block is about to become free, which a cache hit would not     */
+  /* notice: it skips the `HBLK_IS_FREE` check that the miss handler     */
+  /* does.  `GC_remove_counts` below drops the cache as well, but only   */
+  /* as a mapping change; state this requirement where it arises.        */
+  GC_INVALIDATE_HDR_CACHE();
+
   GET_HDR(hbp, hhdr);
   size = HBLKSIZE * OBJ_SZ_TO_BLOCKS(hhdr->hb_sz);
   if ((size & SIZET_SIGNB) != 0) {
