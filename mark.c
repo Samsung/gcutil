@@ -1026,80 +1026,25 @@ GC_mark_from(mse *mark_stack_top, const mse *mark_stack, mse *mark_stack_limit)
   return mark_stack_top;
 }
 
-GC_API mse *
-GC_mark_and_push_custom_iterable(GC_word *addr, mse *mark_stack_ptr,
-                                 mse *mark_stack_limit,
-                                 GC_get_next_pointer_proc proc)
+GC_API mse * GC_CALL
+GC_mark_and_push_ptrs(mse *mark_stack_ptr,
+                      mse *mark_stack_limit,
+                      struct GC_mark_pair *arr,
+                      const int number_of_sub_pointer)
 {
   DECLARE_HDR_CACHE;
-
   INIT_HDR_CACHE;
 
-#if defined(GC_DEBUG)
-  const char *start = GC_USR_PTR_FROM_BASE(addr);
-#else
-  const char *start = (const char *)addr;
-#endif
-  const char *end = ((char *)addr) + GC_size(addr);
-
-  GC_word *iterator = (GC_word *)start;
-  GC_word *next_ptr;
-  GC_word *from;
-  GC_word *to;
   ptr_t least_ha = (ptr_t)GC_least_plausible_heap_addr;
   ptr_t greatest_ha = (ptr_t)GC_greatest_plausible_heap_addr;
-
-  while (TRUE) {
-    ptr_t q;
-
-    proc(iterator, (GC_word *)end, &next_ptr, &from, &to);
-    q = (ptr_t)to;
+  for (int j = 0; j < number_of_sub_pointer; j++) {
+    ptr_t q = (ptr_t)arr[j].to;
     if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
       PREFETCH(q);
-      PUSH_CONTENTS(q, mark_stack_ptr, mark_stack_limit, (ptr_t)from);
-    }
-    iterator = next_ptr;
-    if (iterator >= (GC_word *)end)
-      break;
-  }
-  return (mark_stack_ptr);
-}
-
-GC_API mse *
-GC_mark_and_push_custom(GC_word *addr, mse *mark_stack_ptr,
-                        mse *mark_stack_limit, GC_get_sub_pointer_proc proc,
-                        struct GC_mark_custom_result *arr,
-                        const int number_of_sub_pointer)
-{
-  DECLARE_HDR_CACHE;
-
-  INIT_HDR_CACHE;
-
-#if defined(GC_DEBUG)
-  const char *start = GC_USR_PTR_FROM_BASE(addr);
-#else
-  const char *start = (const char *)addr;
-#endif
-  int i = 0;
-  /*
-   * A mark procedure sees a single object at a time, so the (at most
-   * a handful of) referents it pushes are worth prefiltering against
-   * the plausible heap bounds and prefetching, for the same reason
-   * the main marking loop in `GC_mark_from` does so.
-   */
-  ptr_t least_ha = (ptr_t)GC_least_plausible_heap_addr;
-  ptr_t greatest_ha = (ptr_t)GC_greatest_plausible_heap_addr;
-
-  i = proc((/* no const */ void *)start, arr);
-  for (; i < number_of_sub_pointer; i++) {
-    ptr_t q = (ptr_t)arr[i].to;
-
-    if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
-      PREFETCH(q);
-      PUSH_CONTENTS(q, mark_stack_ptr, mark_stack_limit, (ptr_t)arr[i].from);
+      PUSH_CONTENTS(q, mark_stack_ptr, mark_stack_limit, (ptr_t)arr[j].from);
     }
   }
-  return (mark_stack_ptr);
+  return mark_stack_ptr;
 }
 
 #ifdef PARALLEL_MARK

@@ -55,25 +55,27 @@ Step  Feature  Description                          Depends on
 18    F18      GC_push_marked honours GC_DS_PROC     F1
 19    F19      Getter for the plausible heap bounds  F10
 20    F20      Header cache optimization             (independent)
+21    F21      Simplify custom mark procedures       F1
 ```
 
 Dependency graph:
 ```
 F1 ─┬─→ F2 ─→ F10 ─┬─→ F11
-     │              ├─→ F12 ─→ F13
-     │              └─→ (F14 can go anytime after F1)
-     ├─→ F3 ─→ F7
-     ├─→ F4 (independent)
-     ├─→ F5 (independent)
-     ├─→ F6 (independent)
-     ├─→ F8 (independent)
-     └─→ F9 (independent, but needs CMakeLists from base)
+    │              ├─→ F12 ─→ F13
+    │              └─→ (F14 can go anytime after F1)
+    ├─→ F3 ─→ F7
+    ├─→ F4 (independent)
+    ├─→ F5 (independent)
+    ├─→ F6 (independent)
+    ├─→ F8 (independent)
+    └─→ F9 (independent, but needs CMakeLists from base)
 F15: standalone (F15b needs F9 for GCUtil.h)
 F16: standalone (independent)
 F17: standalone (independent)
 F18: needs F1 (custom mark procs); only observable together with F4
 F19: needs F10 (the heap bounds are only thread-local under GC_THREAD_ISOLATE)
 F20: standalone (independent)
+F21: needs F1 (custom mark procs)
 ```
 
 ---
@@ -1037,6 +1039,27 @@ objects.
 ### Verification
 
 Ensure that under single-thread configurations, the global cache survives across calls and is correctly invalidated upon block mapping changes.
+
+---
+
+## F21. Simplify custom mark procedures
+
+**Depends on:** F1 (custom mark procs)
+**Provides for others:** `GC_mark_and_push_ptrs`
+
+### What to do
+
+1. **`include/gc/gc_mark.h`**:
+   - Remove obsolete APIs: `struct GC_mark_custom_result`, `GC_get_next_pointer_proc`, `GC_get_sub_pointer_proc`, `GC_mark_and_push_custom_iterable`, and `GC_mark_and_push_custom`.
+   - Add new `struct GC_mark_pair` and declare `GC_mark_and_push_ptrs`.
+
+2. **`mark.c`**:
+   - Remove implementations of `GC_mark_and_push_custom_iterable` and `GC_mark_and_push_custom`.
+   - Implement `GC_mark_and_push_ptrs` which processes an array of `GC_mark_pair` using the plausible heap bounds.
+
+### Verification
+
+Ensure both the library and client code compile with the simplified mark APIs.
 
 ---
 
