@@ -625,6 +625,7 @@ it aborts. The TLS lookup itself can also segfault on threads that never ran
    dynamic arrays (no fixed cap). Two registries:
    - `range_registry`: records heap section address ranges that are mprotected
      (i.e., the owning thread has incremental GC on).
+     - **Optimization:** Optimized `coalesce_ranges_locked` to $O(N \log N)$ using `qsort` and a single-pass compaction. Also optimized `GC_isolate_vdb_classify_fault` to use binary search ($O(\log N)$) instead of a linear search ($O(N)$) for looking up faulting addresses in `range_registry`.
    - `pending_queue`: pages where a cross-isolate write was detected, waiting for
      the owning isolate to claim them.
 

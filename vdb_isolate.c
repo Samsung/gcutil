@@ -46,6 +46,7 @@
  * self-deadlock on libc's allocator lock either.
  */
 #include "private/vdb_isolate.h"
+#include <stdlib.h>
 
 #if defined(GC_THREAD_ISOLATE) && defined(MPROTECT_VDB)
 
@@ -164,31 +165,42 @@ ensure_pending_capacity_locked(size_t needed)
   return TRUE;
 }
 
+static int
+compare_ranges(const void *a, const void *b)
+{
+  const GC_isolate_range *ra = (const GC_isolate_range *)a;
+  const GC_isolate_range *rb = (const GC_isolate_range *)b;
+  if (ra->start < rb->start) return -1;
+  if (ra->start > rb->start) return 1;
+  return 0;
+}
+
 /* Merges adjacent (in address, not necessarily in array position)
    same-committed-state entries so range_count does not grow without
    bound under repeated unmap/remap churn. Must be called with
-   range_lock held. O(n^2), but this only runs off the unmap/remap path,
-   never on an allocation hot path, and n stays small in practice. */
+   range_lock held. O(n log n) sorting + O(n) single pass compaction. */
 static void
 coalesce_ranges_locked(void)
 {
+  if (range_count <= 1)
+    return;
+
+  qsort(range_registry, range_count, sizeof(GC_isolate_range), compare_ranges);
+
+  size_t write_idx = 0;
   size_t i;
-
-  for (i = 0; i < range_count; i++) {
-    size_t j = 0;
-
-    while (j < range_count) {
-      if (j != i && range_registry[j].committed == range_registry[i].committed
-          && range_registry[j].start == range_registry[i].end) {
-        range_registry[i].end = range_registry[j].end;
-        range_registry[j] = range_registry[range_count - 1];
-        range_count--;
-        j = 0; /*< array changed under us; restart the inner scan */
-      } else {
-        j++;
+  for (i = 1; i < range_count; i++) {
+    if (range_registry[write_idx].committed == range_registry[i].committed
+        && range_registry[write_idx].end == range_registry[i].start) {
+      range_registry[write_idx].end = range_registry[i].end;
+    } else {
+      write_idx++;
+      if (write_idx != i) {
+        range_registry[write_idx] = range_registry[i];
       }
     }
   }
+  range_count = write_idx + 1;
 }
 
 /*
@@ -375,15 +387,23 @@ GC_INNER GC_isolate_vdb_fault_kind
 GC_isolate_vdb_classify_fault(const void *addr)
 {
   ptr_t a = (ptr_t)addr;
-  size_t i;
   GC_isolate_vdb_fault_kind result = GC_ISOLATE_VDB_UNKNOWN;
 
   GC_isolate_mutex_lock(&range_lock);
-  for (i = 0; i < range_count; i++) {
-    if (a >= range_registry[i].start && a < range_registry[i].end) {
-      result = range_registry[i].committed ? GC_ISOLATE_VDB_CROSS_ISOLATE
-                                           : GC_ISOLATE_VDB_DECOMMITTED;
-      break;
+  if (range_count > 0) {
+    size_t low = 0;
+    size_t high = range_count;
+    while (low < high) {
+      size_t mid = low + (high - low) / 2;
+      if (a >= range_registry[mid].start && a < range_registry[mid].end) {
+        result = range_registry[mid].committed ? GC_ISOLATE_VDB_CROSS_ISOLATE
+                                             : GC_ISOLATE_VDB_DECOMMITTED;
+        break;
+      } else if (a < range_registry[mid].start) {
+        high = mid;
+      } else {
+        low = mid + 1;
+      }
     }
   }
   GC_isolate_mutex_unlock(&range_lock);
