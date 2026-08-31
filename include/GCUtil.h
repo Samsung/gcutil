@@ -107,4 +107,16 @@ void GC_print_heap_usage();
 
 #include "Allocator.h"
 
+#ifdef GC_DEBUG
+#ifdef __cplusplus
+extern "C" {
+#endif
+void* GC_malloc_explicitly_typed_debug_hook(size_t siz, GC_descr d);
+#ifdef __cplusplus
+}
+#endif
+#undef GC_MALLOC_EXPLICITLY_TYPED
+#define GC_MALLOC_EXPLICITLY_TYPED(bytes, d) GC_malloc_explicitly_typed_debug_hook(bytes, d)
+#endif
+
 #endif

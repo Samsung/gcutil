@@ -57,6 +57,7 @@ Step  Feature  Description                          Depends on
 20    F20      Header cache optimization             (independent)
 21    F21      Simplify custom mark procedures       F1
 22    F22      Dynamic descriptor update API         (independent)
+23    F23      Explicitly typed alloc debug support  F9
 ```
 
 Dependency graph:
@@ -78,6 +79,7 @@ F19: needs F10 (the heap bounds are only thread-local under GC_THREAD_ISOLATE)
 F20: standalone (independent)
 F21: needs F1 (custom mark procs)
 F22: standalone (independent)
+F23: needs F9 (for GCUtil.h)
 ```
 
 ---
@@ -1081,6 +1083,27 @@ Ensure both the library and client code compile with the simplified mark APIs.
 ### Verification
 
 Ensure dynamic descriptor changes successfully propagate to existing block headers without race conditions.
+
+---
+
+## F23. Debug support for explicitly typed allocation in GCUtil
+
+**Depends on:** F9 (GCUtil wrapper)
+
+### What to do
+
+1. **`include/GCUtil.h`**:
+   - Under `GC_DEBUG`, declare `GC_malloc_explicitly_typed_debug_hook` and override `GC_MALLOC_EXPLICITLY_TYPED` macro to invoke the debug hook.
+
+2. **`Allocator.cpp`**:
+   - Update `GC_malloc_explicitly_typed_hook` to dispatch to `GC_malloc_explicitly_typed_debug_hook` under `GC_DEBUG`.
+   - Implement a dynamic custom object kind (`s_explicit_debug_kind`) that utilizes `GC_explicit_debug_mark_proc` as its mark procedure.
+   - In `GC_explicit_debug_mark_proc`, skip the debug header to locate the user pointer, load the trailing `GC_descr` from the end of the object, and mark its references using `GC_ms_push_obj_descr`.
+   - In `GC_malloc_explicitly_typed_debug_hook`, allocate using `GC_debug_generic_malloc` with the total size including trailing descriptor space, store the descriptor at the end, and return the allocated address.
+
+### Verification
+
+Compile GCUtil under `GC_DEBUG` configuration, and verify that GC_MALLOC_EXPLICITLY_TYPED allocations under debug mode correctly preserve and process explicit type descriptors during marking.
 
 ---
 

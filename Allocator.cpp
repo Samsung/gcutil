@@ -210,11 +210,11 @@ void* GC_malloc_atomic_uncollectable_hook(size_t siz)
 void* GC_malloc_explicitly_typed_hook(size_t siz, GC_descr desc)
 {
 #if defined(GC_DEBUG)
-    void* ptr = GC_debug_malloc(siz, GC_EXTRAS);
+    void* ptr = GC_malloc_explicitly_typed_debug_hook(siz, desc);
 #else
     void* ptr = GC_malloc_explicitly_typed(siz, desc);
-#endif
     registerGCAddress(ptr, siz);
+#endif
     return ptr;
 }
 
@@ -290,6 +290,64 @@ void GC_free_hook(void* address)
 #else
     GC_free(address);
 #endif
+}
+
+#endif // ESCARGOT_MEM_STATS
+
+#if defined(GC_DEBUG)
+
+extern "C" {
+#include <private/gc_priv.h>
+#include <private/dbg_mlc.h>
+}
+
+static MAY_THREAD_LOCAL int s_explicit_debug_kind = 0;
+
+extern "C" mse* GC_explicit_debug_mark_proc(word* addr, mse* mark_stack_top,
+                                             mse* mark_stack_limit, word env)
+{
+    size_t header_size = GC_get_debug_header_size();
+    ptr_t user_ptr = (ptr_t)addr + header_size;
+    size_t user_sz = (size_t)((oh*)addr)->oh_sz;
+
+    if (user_sz < sizeof(GC_descr)) {
+        return mark_stack_top;
+    }
+
+    if (*(GC_uintptr_t*)user_ptr == GC_FREED_MEM_MARKER) {
+        return mark_stack_top;
+    }
+
+    GC_descr d = *(GC_descr*)(user_ptr + user_sz - sizeof(GC_descr));
+    return GC_ms_push_obj_descr(user_ptr, d, mark_stack_top, mark_stack_limit);
+}
+
+static void init_explicit_debug_kind()
+{
+    if (s_explicit_debug_kind == 0) {
+        void** fl = GC_new_free_list();
+        unsigned proc_index = GC_new_proc((GC_mark_proc)GC_explicit_debug_mark_proc);
+        s_explicit_debug_kind = (int)GC_new_kind(fl, GC_MAKE_PROC(proc_index, 0), FALSE, TRUE);
+    }
+}
+
+extern "C" void* GC_malloc_explicitly_typed_debug_hook(size_t siz, GC_descr desc)
+{
+    init_explicit_debug_kind();
+
+    if (siz < sizeof(void*) - sizeof(GC_descr) + 1) {
+        siz = sizeof(void*) - sizeof(GC_descr) + 1;
+    }
+
+    size_t total_user_sz = siz + sizeof(GC_descr);
+    void* ptr = GC_debug_generic_malloc(total_user_sz, s_explicit_debug_kind, GC_EXTRAS);
+    if (ptr != nullptr) {
+        *(GC_descr*)((char*)ptr + total_user_sz - sizeof(GC_descr)) = desc;
+#ifdef ESCARGOT_MEM_STATS
+        registerGCAddress(ptr, siz);
+#endif
+    }
+    return ptr;
 }
 
 #endif
