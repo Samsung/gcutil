@@ -2864,6 +2864,56 @@ GC_new_kind_enumerable(void **fl, GC_word descr, int adjust, int clear)
   return result;
 }
 
+GC_API void GC_CALL
+GC_change_kind_descriptor_inner(int* kinds, GC_word* new_descriptors, int count)
+{
+  bottom_index *bi;
+  GC_signed_word k;
+
+  GC_ASSERT(I_HOLD_LOCK());
+  GC_ASSERT(kind > 0 && kind < GC_n_kinds);
+
+  for (k = 0; k < count; k ++) {
+    GC_obj_kinds[kinds[k]].ok_descriptor = new_descriptors[k];
+  }
+
+  // coiped from GC_apply_to_all_blocks
+  for (bi = GC_all_bottom_indices; bi != NULL; bi = bi->asc_link) {
+    GC_signed_word j;
+
+    for (j = BOTTOM_SZ - 1; j >= 0;) {
+      hdr *hhdr = bi->index[j];
+
+      if (IS_FORWARDING_ADDR_OR_NIL(hhdr)) {
+        j -= (GC_signed_word)(hhdr != NULL ? ADDR(hhdr) : 1);
+      } else {
+        if (!HBLK_IS_FREE(hhdr)) {
+          GC_ASSERT(HBLK_ADDR(bi, j) == ADDR(hhdr->hb_block));
+          for (k = 0; k < count; k ++) {
+            if (hhdr->hb_obj_kind == kinds[k]) {
+#               ifdef AO_HAVE_store
+              AO_store((AO_t *)&hhdr->hb_descr, new_descriptors[k]);
+#               else
+              hhdr->hb_descr = new_descriptors[k];
+#               endif
+            }
+          }
+        }
+        j--;
+      }
+    }
+  }
+
+}
+
+GC_API void GC_CALL
+GC_change_kind_descriptor(int* kinds, GC_word* new_descriptors, int count)
+{
+  LOCK();
+  GC_change_kind_descriptor_inner(kinds, new_descriptors, count);
+  UNLOCK();
+}
+
 GC_API unsigned GC_CALL
 GC_new_proc_inner(GC_mark_proc proc)
 {

@@ -56,6 +56,7 @@ Step  Feature  Description                          Depends on
 19    F19      Getter for the plausible heap bounds  F10
 20    F20      Header cache optimization             (independent)
 21    F21      Simplify custom mark procedures       F1
+22    F22      Dynamic descriptor update API         (independent)
 ```
 
 Dependency graph:
@@ -76,6 +77,7 @@ F18: needs F1 (custom mark procs); only observable together with F4
 F19: needs F10 (the heap bounds are only thread-local under GC_THREAD_ISOLATE)
 F20: standalone (independent)
 F21: needs F1 (custom mark procs)
+F22: standalone (independent)
 ```
 
 ---
@@ -1060,6 +1062,25 @@ Ensure that under single-thread configurations, the global cache survives across
 ### Verification
 
 Ensure both the library and client code compile with the simplified mark APIs.
+
+---
+
+## F22. Dynamic descriptor update API
+
+**Depends on:** nothing (independent)
+**Provides for others:** `GC_change_kind_descriptor`
+
+### What to do
+
+1. **`include/gc/gc_mark.h`**:
+   - Declare `GC_change_kind_descriptor` and `GC_change_kind_descriptor_inner` to allow dynamically modifying an object kind's GC descriptor.
+
+2. **`misc.c`**:
+   - Implement `GC_change_kind_descriptor` and `GC_change_kind_descriptor_inner`. They change the specified object kind's descriptor and update the descriptor field (`hb_descr`) of all currently allocated blocks matching that kind.
+
+### Verification
+
+Ensure dynamic descriptor changes successfully propagate to existing block headers without race conditions.
 
 ---
 

@@ -360,7 +360,8 @@ GC_API unsigned GC_CALL GC_new_kind_enumerable(
     int /* add_size_to_descriptor */, int /* clear_new_objects */)
     GC_ATTR_NONNULL(1);
 
-
+GC_API void GC_CALL GC_change_kind_descriptor(int* kinds, GC_word* new_descriptors, int count);
+GC_API void GC_CALL GC_change_kind_descriptor_inner(int* kinds, GC_word* new_descriptors, int count);
 
 /* To use mark function, we should choose between:
  * 1. include private header or 2. do some work inside bdwgc
