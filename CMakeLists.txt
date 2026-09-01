@@ -186,7 +186,15 @@ ELSEIF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang") #include GNU, Clan
                 $<$<CONFIG:RelWithDebInfo>:-g3>
                 $<$<CONFIG:RelWithDebInfo>:-DNO_DEBUGGING=1>
                 $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<CONFIG:RelWithDebInfo>>>:-DNO_DEBUGGING=1>
-                $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<CONFIG:RelWithDebInfo>>>:-DNO_ALL_INTERIOR_POINTERS=1>)
+                # Everything but Debug, so that RelWithDebInfo -- which every
+                # local release build and every cross-build uses -- compiles
+                # the same collector as Release. The mode is unreachable there
+                # regardless: Heap.cpp RELEASE_ASSERTs that
+                # GC_get_all_interior_pointers() is 0, so the only way to turn
+                # it on was the GC_ALL_INTERIOR_POINTERS environment variable,
+                # which trips that assert. Debug keeps it, as dbg_mlc.c
+                # registers a nonzero displacement.
+                $<$<NOT:$<CONFIG:Debug>>:-DNO_ALL_INTERIOR_POINTERS=1>)
         ELSE()
             SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL}
                 $<$<CONFIG:Debug>:-DKEEP_BACK_PTRS=1>
@@ -196,9 +204,16 @@ ELSEIF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang") #include GNU, Clan
                 $<$<CONFIG:Debug>:-g3>
                 $<$<CONFIG:RelWithDebInfo>:-g3>
                 # RelWithDebInfo also inherits debug info, but bypasses heavy BDWGC assertions
-                $<$<CONFIG:RelWithDebInfo>:-DNO_DEBUGGING=1>
-                $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<CONFIG:RelWithDebInfo>>>:-DNO_DEBUGGING=1>
-                $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<CONFIG:RelWithDebInfo>>>:-DNO_ALL_INTERIOR_POINTERS=1>)
+                $<$<NOT:$<CONFIG:Debug>>:-DNO_DEBUGGING=1>
+                # Everything but Debug, so that RelWithDebInfo -- which every
+                # local release build and every cross-build uses -- compiles
+                # the same collector as Release. The mode is unreachable there
+                # regardless: Heap.cpp RELEASE_ASSERTs that
+                # GC_get_all_interior_pointers() is 0, so the only way to turn
+                # it on was the GC_ALL_INTERIOR_POINTERS environment variable,
+                # which trips that assert. Debug keeps it, as dbg_mlc.c
+                # registers a nonzero displacement.
+                $<$<NOT:$<CONFIG:Debug>>:-DNO_ALL_INTERIOR_POINTERS=1>)
         ENDIF()
         set_source_files_properties(${GCUTIL_SRC} PROPERTIES COMPILE_FLAGS "-std=c++11 -fno-rtti")
     ENDIF()
