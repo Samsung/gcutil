@@ -407,6 +407,19 @@ GC_API void GC_CALL GC_set_free_space_divisor(GC_word);
 GC_API GC_word GC_CALL GC_get_free_space_divisor(void);
 
 /**
+ * Before carving out a new heap block, the collector collects if more than
+ * a fixed 10 MB has been allocated, and not since reclaimed, over the
+ * current collection cycle; this limits fragmentation.  The divisor scales
+ * that budget with the heap size: the budget becomes the larger of the
+ * fixed 10 MB and `GC_heapsize` divided by this value.  Zero keeps the fixed
+ * budget alone, which makes a large heap pay proportionally more collections
+ * than a small one for the same amount of allocation.  The setter and the
+ * getter are unsynchronized.
+ */
+GC_API void GC_CALL GC_set_allochblk_collect_divisor(GC_word);
+GC_API GC_word GC_CALL GC_get_allochblk_collect_divisor(void);
+
+/**
  * The maximum number of collections attempted before reporting out of
  * memory after heap expansion fails.  Initially 0.  The setter and
  * getter are unsynchronized, so `GC_call_with_alloc_lock()`

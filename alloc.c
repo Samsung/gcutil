@@ -406,7 +406,7 @@ min_bytes_allocd(void)
  * management, etc.  This number is used in deciding when to trigger
  * collections.
  */
-STATIC word
+GC_INNER word
 GC_adj_bytes_allocd(void)
 {
   GC_signed_word result;
@@ -503,6 +503,77 @@ GC_should_collect(void)
   }
 
   return GC_adj_bytes_allocd() >= last_min_bytes_allocd;
+}
+
+/*
+ * Floor of the budget that `GC_should_collect_before_hblk_alloc()` weighs,
+ * and the whole of it unless a divisor is set below.
+ */
+#ifndef MIN_BYTES_SINCE_GC_BEFORE_COLLECT
+#  define MIN_BYTES_SINCE_GC_BEFORE_COLLECT ((word)10 * 1024 * 1024)
+#endif
+
+/*
+ * Divisor applied to the heap size to scale that budget with the heap; the
+ * budget used is the larger of the two.  Under the fixed floor alone, a heap
+ * ten times larger pays ten times as many collections for the same amount of
+ * allocation, and each of those collections costs more than it would on the
+ * smaller heap, since the work of a mark phase follows the size of the live
+ * set.  Zero selects the fixed floor alone.  The default was tuned by
+ * measurement over Octane and the Web Tooling Benchmark; re-measure both,
+ * peak heap included, before changing it.
+ */
+#ifndef DEFAULT_ALLOCHBLK_COLLECT_DIVISOR
+#  define DEFAULT_ALLOCHBLK_COLLECT_DIVISOR 4
+#endif
+
+STATIC MAY_THREAD_LOCAL word GC_allochblk_collect_divisor
+    = DEFAULT_ALLOCHBLK_COLLECT_DIVISOR;
+
+GC_API void GC_CALL
+GC_set_allochblk_collect_divisor(GC_word value)
+{
+  GC_allochblk_collect_divisor = value;
+}
+
+GC_API GC_word GC_CALL
+GC_get_allochblk_collect_divisor(void)
+{
+  return GC_allochblk_collect_divisor;
+}
+
+/*
+ * Have we allocated enough since the latest collection that a new heap block
+ * is worth collecting for first?  Unlike `GC_should_collect()`, which asks
+ * whether a collection has been amortized, this asks only whether the block
+ * about to be carved out has a fair chance of coming from reclaimed space
+ * instead of from a heap expansion.
+ */
+GC_INNER GC_bool
+GC_should_collect_before_hblk_alloc(void)
+{
+  word budget = MIN_BYTES_SINCE_GC_BEFORE_COLLECT;
+
+  GC_ASSERT(I_HOLD_LOCK());
+  if (GC_incremental || GC_disable_automatic_collection)
+    return FALSE;
+
+  if (GC_allochblk_collect_divisor != 0) {
+    word scaled = GC_heapsize / GC_allochblk_collect_divisor;
+
+    if (scaled > budget)
+      budget = scaled;
+  }
+  /*
+   * Weigh what is left of that allocation rather than how much of it there
+   * was.  `GC_bytes_allocd` alone never decreases, so a workload that
+   * recycles a steady amount of memory trips a gross budget over and over
+   * with nothing to reclaim, and it counts allocation served from the free
+   * lists, which needs no new block in the first place.
+   * `GC_adj_bytes_allocd()` nets out what has since been freed, dropped and
+   * finalized, and is the quantity `GC_should_collect()` weighs.
+   */
+  return GC_adj_bytes_allocd() > budget;
 }
 
 /*

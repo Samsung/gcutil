@@ -1668,6 +1668,16 @@ GC_init(void)
         GC_free_space_divisor = (unsigned)space_divisor;
     }
   }
+  {
+    const char *str = GETENV("GC_ALLOCHBLK_COLLECT_DIVISOR");
+
+    if (str != NULL) {
+      int collect_divisor = atoi(str);
+
+      if (collect_divisor >= 0)
+        GC_set_allochblk_collect_divisor((GC_word)collect_divisor);
+    }
+  }
 #ifdef USE_MUNMAP
   {
     const char *str = GETENV("GC_UNMAP_THRESHOLD");

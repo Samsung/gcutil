@@ -2964,8 +2964,19 @@ GC_INNER ptr_t GC_approx_sp(void);
 GC_INNER void GC_disable_inner(void);
 GC_INNER void GC_enable_inner(void);
 
+/*
+ * Return the number of bytes allocated since the latest collection, adjusted
+ * for explicit storage management, reclamation and finalization.  Unlike
+ * `GC_bytes_allocd`, this does not count allocation that has since been
+ * given back.
+ */
+GC_INNER word GC_adj_bytes_allocd(void);
+
 /* Have we allocated enough to amortize a collection? */
 GC_INNER GC_bool GC_should_collect(void);
+
+/* Have we allocated enough to collect before carving out a new heap block? */
+GC_INNER GC_bool GC_should_collect_before_hblk_alloc(void);
 
 /*
  * Get the next block whose address is at least `h`.  Returned block

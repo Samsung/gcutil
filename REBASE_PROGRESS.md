@@ -58,6 +58,7 @@ Step  Feature  Description                          Depends on
 21    F21      Simplify custom mark procedures       F1
 22    F22      Dynamic descriptor update API         (independent)
 23    F23      Explicitly typed alloc debug support  F9
+24    F24      Block-alloc GC trigger: net + scaled   F1
 ```
 
 Dependency graph:
@@ -80,6 +81,7 @@ F20: standalone (independent)
 F21: needs F1 (custom mark procs)
 F22: standalone (independent)
 F23: needs F9 (for GCUtil.h)
+F24: needs F1 (it reshapes F1's periodic GC trigger)
 ```
 
 ---
@@ -108,6 +110,7 @@ custom mark procs, `GC_dump_for_graph`, periodic GC trigger, data-start handling
 4. **`GC_dump_for_graph` (gc_priv.h):** Add declaration.
 
 5. **`allochblk.c`:** Add periodic GC trigger inside the block allocation path.
+   Apply it in the form F24 leaves it in, not the original fixed-threshold one.
 
 6. **`reclaim.c`:** Add `GC_print_block_list()`, `GC_count_set_marks_in_hblk()`,
    and `GC_gather_information_for_escargot()` functions. Do NOT add
@@ -1105,6 +1108,89 @@ Ensure dynamic descriptor changes successfully propagate to existing block heade
 ### Verification
 
 Compile GCUtil under `GC_DEBUG` configuration, and verify that GC_MALLOC_EXPLICITLY_TYPED allocations under debug mode correctly preserve and process explicit type descriptors during marking.
+
+---
+
+## F24. Block-allocation GC trigger: net allocation, heap-scaled budget
+
+**Depends on:** F1 (this reshapes the trigger F1 step 5 introduces)
+
+### What to do
+
+1. **`GC_adj_bytes_allocd()` (alloc.c + gc_priv.h):** change it from `STATIC`
+   to `GC_INNER` and declare it in gc_priv.h, so the block allocator can weigh
+   the same quantity `GC_should_collect()` does.
+
+2. **`GC_should_collect_before_hblk_alloc()` (alloc.c + gc_priv.h):** add this
+   predicate immediately after `GC_should_collect()`, and declare it in
+   gc_priv.h. It returns `FALSE` under `GC_incremental` or
+   `GC_disable_automatic_collection`, and otherwise reports whether
+   `GC_adj_bytes_allocd()` exceeds
+   `max(MIN_BYTES_SINCE_GC_BEFORE_COLLECT, GC_heapsize / divisor)`.
+   `MIN_BYTES_SINCE_GC_BEFORE_COLLECT` is 10 MB and
+   `DEFAULT_ALLOCHBLK_COLLECT_DIVISOR` is 4; both are `#ifndef`-guarded so a
+   build can override them. A divisor of zero selects the fixed floor alone.
+
+3. **`GC_allochblk()` (allchblk.c):** replace F1's inline threshold test with a
+   call to the predicate. Keep `GC_ASSERT(I_HOLD_LOCK())` *above* the
+   `GC_gcollect_inner()` call -- F1 had it below, asserting the lock only after
+   already running a whole collection under it.
+
+4. **Knob (alloc.c + gc.h + misc.c):** `GC_set_allochblk_collect_divisor()` /
+   `GC_get_allochblk_collect_divisor()`, declared in gc.h, plus a
+   `GC_ALLOCHBLK_COLLECT_DIVISOR` environment override read in `GC_init()`
+   alongside the other divisor knobs.
+
+### Why this matters
+
+F1's trigger weighed `GC_get_bytes_since_gc()`, which is plain
+`GC_bytes_allocd` -- the one allocation counter that deliberately never
+decreases. `GC_free()`, sweeping and finalization all credit `GC_bytes_freed`,
+`GC_bytes_dropped` and `GC_finalizer_bytes_freed` instead, and only
+`GC_adj_bytes_allocd()` nets them out. Two consequences: a workload that
+recycles a steady amount of memory trips the threshold over and over with
+nothing to reclaim, and allocation served from the free lists -- which needs no
+new block at all -- counts toward a budget whose stated purpose is to limit
+fragmentation before taking a *new* block.
+
+The threshold was also a fixed 10 MB regardless of heap size, so a heap ten
+times larger paid ten times as many collections for the same amount of
+allocation, each of them more expensive than on the smaller heap, since the
+work of a mark phase follows the size of the live set.
+
+Separately, because this path bypasses `GC_should_collect()` entirely, it
+ignored `GC_disable_automatic_collection`: a client that had switched automatic
+collection off still got full collections from the block allocator.
+
+### Verification
+
+Raspberry Pi 5, arm32, performance governor, ASLR off, isolated core, runs
+alternated between the two binaries and averaged over two passes. Against F1's
+trigger:
+
+```
+                 F1 trigger    this feature
+Octane              1814          1828        +0.8%
+Octane max RSS    71,292 kB     71,606 kB     +0.4%
+Web Tooling          0.795         0.955     +20.1%  (geomean, runs/s)
+WT max RSS       192,750 kB    210,086 kB     +9.0%
+```
+
+Octane is the guardrail here and the Web Tooling Benchmark is what the change
+is for: Octane's peak heap is unchanged, while the allocation-heavy suite
+trades 9% of peak heap for a fifth more throughput.
+
+The divisor was chosen by sweeping 0, 8, 4 and 1 over both suites. Two effects
+separate cleanly. The counter change alone (divisor 0, fixed floor) is worth
+several percent on the Web Tooling Benchmark at no cost in peak heap. Scaling
+the budget is worth much more, but only up to a point: by divisor 1 the trigger
+is effectively disabled, Octane's peak heap grows by more than half, and the
+Web Tooling result becomes unstable from pass to pass, since nothing bounds
+where the heap is when a collection finally happens. Divisor 4 was the largest
+budget measured that left Octane's peak heap unchanged and reproduced across
+passes. Re-measure both suites, peak heap included, before moving it.
+
+**Commits:** (this change)
 
 ---
 
