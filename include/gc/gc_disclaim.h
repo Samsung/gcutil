@@ -25,6 +25,13 @@ extern "C" {
  * (i.e. with `ENABLE_DISCLAIM` macro defined).
  */
 
+/*
+ * Offset from the collector allocation base to the client-visible object.
+ * It keeps finalized allocations at least 8-byte aligned on 32-bit targets.
+ */
+#define GC_FINALIZED_MALLOC_USER_OFFSET \
+  (sizeof(void *) < 8 ? (size_t)8 : sizeof(void *))
+
 /**
  * Prepare the object kind used by `GC_finalized_malloc`.  Call it from
  * your initialization code or, at least, at some point before using
@@ -67,9 +74,10 @@ struct GC_finalizer_closure {
  * The other objects reachable from `fc->proc()` (including the closure
  * object in case it is a heap-allocated one) will be protected from
  * collection.  Note that `GC_size()` (applied to such allocated object)
- * returns a value slightly bigger than the specified allocation size,
- * and that `GC_base()` result points to a "pointer-sized" word prior
- * to the start of the allocated object.
+ * returns a value slightly bigger than the specified allocation size.
+ * The returned object is at least 8-byte aligned.  `GC_base()` points to an
+ * internal header before the allocated object (8 bytes on supported 32-bit
+ * and 64-bit targets).
  * The disclaim procedure is not invoked in the find-leak mode.
  * There is no debugging variant of this allocation function.
  */

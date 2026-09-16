@@ -52,7 +52,7 @@ GC_finalized_disclaim(void *obj)
             fc_p, FINALIZER_CLOSURE_FLAG);
 
     GC_ASSERT(!GC_find_leak_inner);
-    fc->proc((ptr_t *)obj + 1, fc->cd);
+    fc->proc((ptr_t)obj + GC_FINALIZED_MALLOC_USER_OFFSET, fc->cd);
   }
   return 0;
 }
@@ -85,10 +85,10 @@ GC_init_finalized_malloc(void)
    * The finalizer closure is placed in the first pointer of the
    * object in order to use the lower bits to distinguish live
    * objects from objects on the free list.  The downside of this is
-   * that we need one-pointer offset interior pointers, and that
+   * that we need interior pointers at GC_FINALIZED_MALLOC_USER_OFFSET, and that
    * `GC_base()` does not return the start of the user region.
    */
-  GC_register_displacement_inner(sizeof(ptr_t));
+  GC_register_displacement_inner(GC_FINALIZED_MALLOC_USER_OFFSET);
 
   /*
    * And, the pointer to the finalizer closure object itself is displaced
@@ -151,7 +151,7 @@ GC_finalized_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
 #  endif
   GC_ASSERT(NONNULL_ARG_NOT_NULL(fclos));
   GC_ASSERT((ADDR(fclos) & FINALIZER_CLOSURE_FLAG) == 0);
-  op = GC_malloc_kind(SIZET_SAT_ADD(lb, sizeof(ptr_t)),
+  op = GC_malloc_kind(SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET),
                       (int)GC_finalized_kind);
   if (UNLIKELY(NULL == op))
     return NULL;
@@ -169,7 +169,7 @@ GC_finalized_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
 #  endif
   GC_dirty(op);
   REACHABLE_AFTER_DIRTY(fc_p);
-  return (ptr_t *)op + 1;
+  return (ptr_t)op + GC_FINALIZED_MALLOC_USER_OFFSET;
 }
 
 GC_API GC_ATTR_MALLOC void *GC_CALL
@@ -184,7 +184,7 @@ GC_finalized_atomic_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
 #  endif
   GC_ASSERT(NONNULL_ARG_NOT_NULL(fclos));
   GC_ASSERT((ADDR(fclos) & FINALIZER_CLOSURE_FLAG) == 0);
-  op = GC_malloc_kind(SIZET_SAT_ADD(lb, sizeof(ptr_t)),
+  op = GC_malloc_kind(SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET),
                       (int)GC_finalized_ptrfree_kind);
   if (UNLIKELY(NULL == op))
     return NULL;
@@ -202,7 +202,7 @@ GC_finalized_atomic_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
 #  endif
   GC_dirty(op);
   REACHABLE_AFTER_DIRTY(fc_p);
-  return (ptr_t *)op + 1;
+  return (ptr_t)op + GC_FINALIZED_MALLOC_USER_OFFSET;
 }
 
 #endif /* ENABLE_DISCLAIM */
