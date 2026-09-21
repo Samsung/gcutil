@@ -524,7 +524,7 @@ GC_should_collect(void)
  * peak heap included, before changing it.
  */
 #ifndef DEFAULT_ALLOCHBLK_COLLECT_DIVISOR
-#  define DEFAULT_ALLOCHBLK_COLLECT_DIVISOR 4
+#  define DEFAULT_ALLOCHBLK_COLLECT_DIVISOR 3
 #endif
 
 STATIC MAY_THREAD_LOCAL word GC_allochblk_collect_divisor

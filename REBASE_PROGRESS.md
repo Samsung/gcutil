@@ -1128,7 +1128,7 @@ Compile GCUtil under `GC_DEBUG` configuration, and verify that GC_MALLOC_EXPLICI
    `GC_adj_bytes_allocd()` exceeds
    `max(MIN_BYTES_SINCE_GC_BEFORE_COLLECT, GC_heapsize / divisor)`.
    `MIN_BYTES_SINCE_GC_BEFORE_COLLECT` is 10 MB and
-   `DEFAULT_ALLOCHBLK_COLLECT_DIVISOR` is 4; both are `#ifndef`-guarded so a
+   `DEFAULT_ALLOCHBLK_COLLECT_DIVISOR` is 3; both are `#ifndef`-guarded so a
    build can override them. A divisor of zero selects the fixed floor alone.
 
 3. **`GC_allochblk()` (allchblk.c):** replace F1's inline threshold test with a
@@ -1188,7 +1188,70 @@ is effectively disabled, Octane's peak heap grows by more than half, and the
 Web Tooling result becomes unstable from pass to pass, since nothing bounds
 where the heap is when a collection finally happens. Divisor 4 was the largest
 budget measured that left Octane's peak heap unchanged and reproduced across
-passes. Re-measure both suites, peak heap included, before moving it.
+passes.
+
+Retuned to 3 alongside F25: once `GC_allochblk()` tries the free lists (and
+coalescing) before ever collecting, a divisor of 4 let more net allocation
+accumulate before the fallback collect fired. Re-measured on the same Pi rig
+together with F25; 3 was the value that kept both suites within F24's original
+bounds. Re-measure both suites, peak heap included, before moving it again.
+
+**Commits:** (this change)
+
+---
+
+## F25. Coalesce adjacent free blocks before collecting
+
+**Depends on:** F24 (shares `GC_should_collect_before_hblk_alloc()` and the
+collect-divisor knob; retunes its divisor)
+
+### What to do
+
+1. **`GC_allochblk()` (allchblk.c):** split the free-list search out into a
+   new `GC_allochblk_from_free_lists()` -- exact-match lookup, then the
+   split-eligible larger lists, unchanged from F1/F24's logic. `GC_allochblk()`
+   itself becomes a three-step driver: search the free lists first; on
+   failure, under `USE_MUNMAP`, try to coalesce adjacent free blocks and
+   retry the search once; only if that also fails, run
+   `GC_should_collect_before_hblk_alloc()` / `GC_gcollect_inner()` and retry
+   the search a final time. F1/F24 collected (when due) *before* ever
+   searching the free lists, and searched only once.
+
+2. **`GC_merge_free_blocks_for_alloc()` (allchblk.c, new, `USE_MUNMAP`-only):**
+   walk the free-list buckets; for each free block, walk its immediately
+   following free neighbors (the same adjacency `GC_merge_unmapped()` scans)
+   accumulating size until either the chain covers the (aligned) requested
+   size or a non-free/overflowing neighbor is hit. When a satisfying chain is
+   found, merge only that chain via `GC_remove_from_fl`/`GC_add_to_fl`,
+   normalizing mapped/unmapped state block-by-block the same way
+   `GC_merge_unmapped()` does -- preferring to end up unmapped when any
+   member of the chain already is, so the allocation path remaps only the
+   part it actually consumes. Unlike `GC_merge_unmapped()`, stop at the first
+   satisfying chain instead of coalescing every eligible pair in every list.
+
+3. **`DEFAULT_ALLOCHBLK_COLLECT_DIVISOR` (alloc.c):** retuned from 4 to 3 (see
+   F24's Verification for why).
+
+### Why this matters
+
+F1/F24 always collected first (when the net-allocation budget was exceeded)
+without checking whether an existing free block -- or a splittable larger one
+-- could already satisfy the request. Searching the free lists first avoids a
+collection whenever the heap already has room, which is common right after a
+prior collection freed a mix of block sizes.
+
+Coalescing closes the remaining gap: adjacent free blocks that are each too
+small individually, but whose sum would fit the request, previously forced
+either a heap-growing collection or an OS-level heap expansion. Merging just
+enough of that chain lets the allocation come from memory already owned by
+the process, at the cost of a linear scan bounded by the chain actually
+merged (not the whole free list, unlike `GC_merge_unmapped()`).
+
+### Verification
+
+Measured and verified on the same Raspberry Pi 5 rig/methodology as F24
+(Octane + Web Tooling Benchmark, peak heap included, binaries alternated).
+TODO: transcribe the actual run numbers into this section.
 
 **Commits:** (this change)
 

@@ -750,6 +750,90 @@ GC_merge_unmapped(void)
   return merged;
 }
 
+/*
+ * Coalesce one adjacent free-block chain only if the merged range can
+ * satisfy the current allocation request.  If mapped and unmapped blocks
+ * are mixed, normalize toward unmapped memory; the allocation path will
+ * remap only the part it actually consumes.  This avoids remapping an
+ * entire large free neighbor merely to make coalescing possible.
+ */
+STATIC GC_bool
+GC_merge_free_blocks_for_alloc(size_t size_needed, size_t align_m1)
+{
+  size_t i;
+
+  for (i = 0; i <= N_HBLK_FLS; ++i) {
+    struct hblk *h;
+    hdr *hhdr;
+
+    for (h = GC_hblkfreelist[i]; h != NULL; h = hhdr->hb_next) {
+      struct hblk *next;
+      hdr *nexthdr;
+      size_t total_size;
+      size_t required_size
+          = size_needed + (((align_m1) + 1 - (size_t)ADDR(h)) & align_m1);
+
+      GET_HDR(h, hhdr);
+      total_size = hhdr->hb_sz;
+      if (total_size >= required_size)
+        continue;
+
+      next = (struct hblk *)((ptr_t)h + total_size);
+      GET_HDR(next, nexthdr);
+      while (nexthdr != NULL && HBLK_IS_FREE(nexthdr)
+             && !BLOCKS_MERGE_OVERFLOW(hhdr, nexthdr)) {
+#  ifdef CHERI_PURECAP
+        if (!CAPABILITY_COVERS_RANGE(h, ADDR(next),
+                                     ADDR(next) + nexthdr->hb_sz))
+          break;
+#  endif
+        total_size += nexthdr->hb_sz;
+        if (total_size >= required_size)
+          break;
+        next = (struct hblk *)((ptr_t)next + nexthdr->hb_sz);
+        GET_HDR(next, nexthdr);
+      }
+      if (nexthdr == NULL || !HBLK_IS_FREE(nexthdr)
+          || total_size < required_size)
+        continue;
+
+      /* Merge through `next`, preserving an unmapped result if any member
+       * of the selected chain is already unmapped. */
+      do {
+        size_t size = hhdr->hb_sz;
+        size_t next_size;
+
+        next = (struct hblk *)((ptr_t)h + size);
+        GET_HDR(next, nexthdr);
+        GC_ASSERT(nexthdr != NULL && HBLK_IS_FREE(nexthdr));
+        next_size = nexthdr->hb_sz;
+
+        if (IS_MAPPED(hhdr) && !IS_MAPPED(nexthdr)) {
+          GC_adjust_num_unmapped(h, hhdr);
+          GC_unmap((ptr_t)h, size);
+          GC_unmap_gap((ptr_t)h, size, (ptr_t)next, next_size);
+          hhdr->hb_flags |= WAS_UNMAPPED;
+        } else if (!IS_MAPPED(hhdr) && IS_MAPPED(nexthdr)) {
+          GC_adjust_num_unmapped(next, nexthdr);
+          GC_unmap((ptr_t)next, next_size);
+          GC_unmap_gap((ptr_t)h, size, (ptr_t)next, next_size);
+        } else if (!IS_MAPPED(hhdr)) {
+          GC_unmap_gap((ptr_t)h, size, (ptr_t)next, next_size);
+        }
+
+        GC_remove_from_fl(hhdr);
+        GC_remove_from_fl(nexthdr);
+        hhdr->hb_sz += next_size;
+        GC_remove_header(next);
+        GC_add_to_fl(h, hhdr);
+      } while (hhdr->hb_sz < required_size);
+
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 #endif /* USE_MUNMAP */
 
 /*
@@ -845,25 +929,56 @@ STATIC struct hblk *GC_allochblk_nth(size_t lb_adjusted, int kind,
 #  define AVOID_SPLIT_REMAPPED 2
 #endif
 
+STATIC struct hblk *
+GC_allochblk_from_free_lists(size_t lb_adjusted, int kind, unsigned flags,
+                             size_t start_list, size_t align_m1)
+{
+  struct hblk *result;
+  int may_split = TRUE;
+  size_t split_limit; /* highest index of free list whose blocks we split */
+
+  /* Prefer an exact match, but use an already-free larger block before
+   * deciding that a collection is needed. */
+  result = GC_allochblk_nth(lb_adjusted, kind, flags, start_list, FALSE,
+                            align_m1);
+  if (result != NULL)
+    return result;
+
+  if (GC_use_entire_heap || GC_dont_gc
+      || GC_heapsize - GC_large_free_bytes < GC_requested_heapsize
+      || GC_incremental || !GC_should_collect()) {
+    /* Should use more of the heap, even if it requires splitting. */
+    split_limit = N_HBLK_FLS;
+  } else if (GC_finalizer_bytes_freed > (GC_heapsize >> 4)) {
+    /* If finalizers freed a lot, preserve the old preference to collect. */
+    split_limit = 0;
+  } else {
+    split_limit = GC_enough_large_bytes_left();
+#ifdef USE_MUNMAP
+    if (split_limit > 0)
+      may_split = AVOID_SPLIT_REMAPPED;
+#endif
+  }
+  if (start_list < UNIQUE_THRESHOLD && 0 == align_m1)
+    ++start_list; /* The exact-match list was already checked. */
+
+  for (; start_list <= split_limit; ++start_list) {
+    result = GC_allochblk_nth(lb_adjusted, kind, flags, start_list, may_split,
+                              align_m1);
+    if (result != NULL)
+      return result;
+  }
+  return NULL;
+}
+
 GC_INNER struct hblk *
 GC_allochblk(size_t lb_adjusted, int kind,
              unsigned flags /* `IGNORE_OFF_PAGE` or 0 */, size_t align_m1)
 {
   size_t blocks, start_list;
   struct hblk *result;
-  int may_split;
-  size_t split_limit; /* highest index of free list whose blocks we split */
 
   GC_ASSERT(I_HOLD_LOCK());
-  if (GC_should_collect_before_hblk_alloc()) {
-    /*
-     * To reduce fragmentation overhead, collect occasionally before
-     * allocating a new block if much has been allocated, and not since
-     * reclaimed, without a collection.
-     */
-    GC_gcollect_inner();
-  }
-
   GC_ASSERT((lb_adjusted & (GC_GRANULE_BYTES - 1)) == 0);
   blocks = OBJ_SZ_TO_BLOCKS_CHECKED(lb_adjusted);
   if (UNLIKELY(SIZET_SAT_ADD(blocks * HBLKSIZE, align_m1)
@@ -871,51 +986,32 @@ GC_allochblk(size_t lb_adjusted, int kind,
     return NULL; /* overflow */
 
   start_list = GC_hblk_fl_from_blocks(blocks);
-  /* Try for an exact match first. */
-  result = GC_allochblk_nth(lb_adjusted, kind, flags, start_list, FALSE,
-                            align_m1);
+  result = GC_allochblk_from_free_lists(lb_adjusted, kind, flags, start_list,
+                                        align_m1);
   if (result != NULL)
     return result;
 
-  may_split = TRUE;
-  if (GC_use_entire_heap || GC_dont_gc
-      || GC_heapsize - GC_large_free_bytes < GC_requested_heapsize
-      || GC_incremental || !GC_should_collect()) {
-    /* Should use more of the heap, even if it requires splitting. */
-    split_limit = N_HBLK_FLS;
-  } else if (GC_finalizer_bytes_freed > (GC_heapsize >> 4)) {
-    /*
-     * If we are deallocating lots of memory from finalizers, then fail
-     * and collect sooner rather than later.
-     */
-    split_limit = 0;
-  } else {
-    /*
-     * If we have enough large blocks left to cover any previous request
-     * for large blocks, we go ahead and split.  Assuming a steady state,
-     * that should be safe.  It means that we can use the full heap
-     * if we allocate only small objects.
-     */
-    split_limit = GC_enough_large_bytes_left();
 #ifdef USE_MUNMAP
-    if (split_limit > 0)
-      may_split = AVOID_SPLIT_REMAPPED;
-#endif
-  }
-  if (start_list < UNIQUE_THRESHOLD && 0 == align_m1) {
-    /*
-     * No reason to try `start_list` again, since all blocks are exact
-     * matches.
-     */
-    ++start_list;
-  }
-  for (; start_list <= split_limit; ++start_list) {
-    result = GC_allochblk_nth(lb_adjusted, kind, flags, start_list, may_split,
-                              align_m1);
+  if (GC_merge_free_blocks_for_alloc(
+          (lb_adjusted + HBLKSIZE - 1) & ~(HBLKSIZE - 1), align_m1)) {
+    result = GC_allochblk_from_free_lists(lb_adjusted, kind, flags, start_list,
+                                          align_m1);
     if (result != NULL)
-      break;
+      return result;
   }
-  return result;
+#endif
+
+  if (GC_should_collect_before_hblk_alloc()) {
+    /*
+     * No suitable existing free block was found.  Collect before growing
+     * the heap, then retry because the collection may have populated or
+     * coalesced the block free lists.
+     */
+    GC_gcollect_inner();
+    return GC_allochblk_from_free_lists(lb_adjusted, kind, flags, start_list,
+                                        align_m1);
+  }
+  return NULL;
 }
 
 #define ALIGN_PAD_SZ(p, align_m1) \
