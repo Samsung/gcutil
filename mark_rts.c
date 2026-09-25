@@ -704,6 +704,11 @@ GC_push_all_stack_sections(ptr_t lo /* top */, ptr_t hi /* bottom */,
 STATIC void
 GC_push_all_stack_partially_eager(ptr_t bottom, ptr_t top, ptr_t cold_gc_frame)
 {
+#    if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  /* Stack words need immediate scanning of both 32-bit halves. */
+  GC_push_all_eager(bottom, top);
+  UNUSED_ARG(cold_gc_frame);
+#    else
 #    if (!defined(NEED_FIXUP_POINTER) || defined(DYNAMIC_POINTER_MASK)) \
         && !defined(NO_ALL_INTERIOR_POINTERS)
   if (GC_all_interior_pointers
@@ -734,6 +739,7 @@ GC_push_all_stack_partially_eager(ptr_t bottom, ptr_t top, ptr_t cold_gc_frame)
     GC_push_all_eager(bottom, top);
     UNUSED_ARG(cold_gc_frame);
   }
+#    endif
 #    ifdef TRACE_BUF
   GC_add_trace_entry("GC_push_all_stack", bottom, top);
 #    endif

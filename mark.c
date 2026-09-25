@@ -1853,6 +1853,15 @@ GC_push_all_eager(void *bottom, void *top)
 
     LOAD_PTR_OR_CONTINUE(q, current_p);
     GC_PUSH_ONE_STACK(q, current_p);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    /* A compressed heap reference may occupy either half of this word,
+     * including a callee-saved register spilled into a GC stack frame. */
+    if (((word)q >> 32) != 0) {
+      GC_PUSH_ONE_STACK((ptr_t)(word)(unsigned32)(word)q, current_p);
+      GC_PUSH_ONE_STACK((ptr_t)(word)(unsigned32)((word)q >> 32),
+                        current_p + sizeof(unsigned32));
+    }
+#endif
   }
 #undef GC_greatest_plausible_heap_addr
 #undef GC_least_plausible_heap_addr
@@ -1865,6 +1874,10 @@ GC_INNER void
 GC_push_all_stack(void *bottom, void *top)
 {
   GC_ASSERT(I_HOLD_LOCK());
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  /* Deferred descriptor scanning only considers pointer-sized words. */
+  GC_push_all_eager(bottom, top);
+#else
   if (GC_all_interior_pointers
 #  if defined(THREADS) && defined(MPROTECT_VDB)
       /* TODO: Should we avoid `GC_push_all()` if using `userfaultfd`? */
@@ -1876,6 +1889,7 @@ GC_push_all_stack(void *bottom, void *top)
   } else {
     GC_push_all_eager(bottom, top);
   }
+#endif
 }
 #endif
 
