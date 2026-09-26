@@ -2305,6 +2305,13 @@ struct _GC_arrays {
 #define GC_n_heap_sects GC_arrays._n_heap_sects
   size_t _n_heap_sects; /*< number of separately added heap sections */
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#  define GC_cage_base GC_arrays._cage_base
+#  define GC_cage_next GC_arrays._cage_next
+  word _cage_base; /* 4-GiB aligned base of this thread's heap reservation */
+  word _cage_next; /* next uncommitted byte in that reservation */
+#endif
+
 #ifdef ANY_MSWIN
 #  define GC_n_heap_bases GC_arrays._n_heap_bases
   size_t _n_heap_bases; /*< see `GC_heap_bases[]` */
@@ -3697,6 +3704,9 @@ GC_INNER hdr *GC_find_header(const void *h);
  * chunk to `GC_our_memory`.  Return `NULL` if out of memory.
  */
 GC_INNER ptr_t GC_os_get_mem(size_t bytes);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_INNER void GC_release_cage(void);
+#endif
 
 #if defined(NO_FIND_LEAK) && defined(SHORT_DBG_HDRS)
 #  define GC_print_all_errors() (void)0

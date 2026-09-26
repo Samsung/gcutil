@@ -377,6 +377,15 @@ GC_API struct GC_ms_entry *GC_CALL GC_mark_and_push_ptrs(
     struct GC_ms_entry * /* `mark_stack_limit` */,
     struct GC_mark_pair* /* `src` */,
     const int number_of_sub_pointer);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+struct GC_mark_pair_32bit {
+  const unsigned int *from;
+  unsigned int offset;
+};
+GC_API struct GC_ms_entry *GC_CALL GC_mark_and_push_32bit(
+    struct GC_ms_entry *mark_stack_top, struct GC_ms_entry *mark_stack_limit,
+    const struct GC_mark_pair_32bit *pairs, int count);
+#endif
 
 /**
  * Return a new mark procedure identifier, suitable for use as the first

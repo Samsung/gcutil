@@ -1047,6 +1047,22 @@ GC_mark_and_push_ptrs(mse *mark_stack_ptr,
   return mark_stack_ptr;
 }
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API mse *GC_CALL
+GC_mark_and_push_32bit(mse *top, mse *limit,
+                       const struct GC_mark_pair_32bit *pairs, int count)
+{
+  int i;
+  for (i = 0; i < count; ++i) {
+    ptr_t p = (ptr_t)(GC_cage_base + (word)pairs[i].offset);
+    if (ADDR_LT((ptr_t)GC_least_plausible_heap_addr, p)
+        && ADDR_LT(p, (ptr_t)GC_greatest_plausible_heap_addr))
+      top = GC_mark_and_push(p, top, limit, (void **)pairs[i].from);
+  }
+  return top;
+}
+#endif
+
 #ifdef PARALLEL_MARK
 
 /* Note: this is protected by the mark lock. */
@@ -1684,6 +1700,16 @@ void
 GC_push_one(word p)
 {
   GC_PUSH_ONE_STACK((ptr_t)p, MARKED_FROM_REGISTER);
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (GC_cage_base != 0) {
+    word low = (word)(unsigned32)p;
+    word high = (word)(unsigned32)(p >> 32);
+    if (low > 0x1e && !(low & 1))
+      GC_PUSH_ONE_STACK((ptr_t)(GC_cage_base + low), MARKED_FROM_REGISTER);
+    if (high > 0x1e && !(high & 1))
+      GC_PUSH_ONE_STACK((ptr_t)(GC_cage_base + high), MARKED_FROM_REGISTER);
+  }
+#  endif
 }
 #endif /* DARWIN && THREADS */
 
@@ -1856,10 +1882,14 @@ GC_push_all_eager(void *bottom, void *top)
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
     /* A compressed heap reference may occupy either half of this word,
      * including a callee-saved register spilled into a GC stack frame. */
-    if (((word)q >> 32) != 0) {
-      GC_PUSH_ONE_STACK((ptr_t)(word)(unsigned32)(word)q, current_p);
-      GC_PUSH_ONE_STACK((ptr_t)(word)(unsigned32)((word)q >> 32),
-                        current_p + sizeof(unsigned32));
+    {
+      word low = (word)(unsigned32)(word)q;
+      word high = (word)(unsigned32)((word)q >> 32);
+      if (GC_cage_base && low > 0x1e && !(low & 1))
+        GC_PUSH_ONE_STACK((ptr_t)(GC_cage_base + low), current_p);
+      if (GC_cage_base && high > 0x1e && !(high & 1))
+        GC_PUSH_ONE_STACK((ptr_t)(GC_cage_base + high),
+                          current_p + sizeof(unsigned32));
     }
 #endif
   }

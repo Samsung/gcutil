@@ -89,6 +89,14 @@ pthread_key_t GC_arrays_pthread_key;
 MAY_THREAD_LOCAL struct _GC_arrays GC_arrays /* `= { 0 }` */;
 #endif
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API GC_word GC_CALL
+GC_get_cage_base(void)
+{
+  return GC_cage_base;
+}
+#endif
+
 GC_INNER MAY_THREAD_LOCAL unsigned GC_n_mark_procs = GC_RESERVED_MARK_PROCS;
 
 GC_INNER MAY_THREAD_LOCAL unsigned GC_n_kinds = GC_N_KINDS_INITIAL_VALUE;
@@ -2047,6 +2055,10 @@ GC_deinit(void)
    * thread create/destroy cycles.
    */
   GC_isolate_vdb_deinit();
+
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  GC_release_cage();
+#  endif
 
   BZERO(&GC_arrays, sizeof(GC_arrays)); /*< clears GC_is_initialized */
   GC_gc_no = 0;

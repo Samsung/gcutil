@@ -103,6 +103,10 @@ GC_API GC_VERSION_VAL_T GC_CALL GC_get_version(void);
  */
 GC_API GC_MAY_THREAD_LOCAL GC_ATTR_DEPRECATED GC_word GC_gc_no;
 GC_API GC_word GC_CALL GC_get_gc_no(void);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+/* Thread-local 4-GiB cage base. Valid after GC_init(). */
+GC_API GC_word GC_CALL GC_get_cage_base(void);
+#endif
 
 #ifdef GC_THREADS
 /**

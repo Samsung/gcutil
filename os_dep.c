@@ -18,6 +18,10 @@
 #include "private/gc_priv.h"
 #include "private/vdb_isolate.h"
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT) && !defined(USE_MMAP)
+#  error A compressed 4-GiB cage requires mmap-backed GC allocation
+#endif
+
 #if (defined(MPROTECT_VDB) && !defined(MSWIN32) && !defined(MSWINCE)) \
     || (defined(SOLARIS) && defined(THREADS)) || defined(OPENBSD)     \
     || (defined(UFFDWP_VDB) && !defined(NO_MARKER_SPECIAL_SIGMASK))
@@ -2471,6 +2475,9 @@ GC_unix_mmap_get_mem(size_t bytes)
 {
   void *result;
   static MAY_THREAD_LOCAL word last_addr = HEAP_START;
+#      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  const word cage_size = (word)1 << 32;
+#      endif
 
 #      ifndef USE_MMAP_ANON
   static MAY_THREAD_LOCAL GC_bool initialized = FALSE;
@@ -2503,38 +2510,31 @@ GC_unix_mmap_get_mem(size_t bytes)
      * intentionally), otherwise `mmap()` fails setting `errno` to `EPROT`.
      */
 #      if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-  if (last_addr == 0) {
-    last_addr = (word)0x1000;
+  if (GC_cage_base == 0) {
+    /* Reserve twice the cage size, align inside it, then trim the ends.
+     * The first page stays inaccessible so zero remains the empty value. */
+    void *reservation = mmap(NULL, (size_t)(cage_size * 2), PROT_NONE,
+                             MAP_PRIVATE | OPT_MAP_ANON, zero_fd, 0);
+    word aligned;
+    if (reservation == MAP_FAILED)
+      return NULL;
+    aligned = (ADDR(reservation) + cage_size - 1) & ~(cage_size - 1);
+    if (aligned != ADDR(reservation))
+      (void)munmap(reservation, (size_t)(aligned - ADDR(reservation)));
+    if (aligned + cage_size != ADDR(reservation) + cage_size * 2)
+      (void)munmap(MAKE_CPTR(aligned + cage_size),
+                   (size_t)(ADDR(reservation) + cage_size * 2
+                            - aligned - cage_size));
+    GC_cage_base = aligned;
+    GC_cage_next = aligned + GC_page_size;
   }
-#        if defined(MAP_32BIT)
-  result = mmap(
-      MAKE_CPTR(last_addr), bytes,
-      (PROT_READ | PROT_WRITE) | (GC_pages_executable ? PROT_EXEC : 0),
-      GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_32BIT, zero_fd, 0 /* offset */);
-#        else
-  int retry = 0;
-  while (last_addr < 1073741824L * 4) {
-    result = mmap(MAKE_CPTR(last_addr), bytes,
-                  (PROT_READ | PROT_WRITE)
-                      | (GC_pages_executable ? PROT_EXEC : 0),
-                  GC_MMAP_FLAGS | OPT_MAP_ANON | MAP_FIXED_NOREPLACE, zero_fd,
-                  0 /* offset */);
-    if (result != MAP_FAILED) {
-      if (ADDR(result) + bytes > 1073741824L * 4 && retry == 0) {
-        retry = 1;
-        last_addr = (word)0x1000;
-        continue;
-      } else {
-        break;
-      }
-    }
-    last_addr = last_addr + GC_page_size;
-  }
-
-  if (ADDR(result) + bytes > 1073741824L * 4) {
-    ABORT("Cannot allocate memory");
-  }
-#        endif
+  if (bytes > cage_size - (GC_cage_next - GC_cage_base))
+    return NULL;
+  result = MAKE_CPTR(GC_cage_next);
+  if (mprotect(result, bytes, (PROT_READ | PROT_WRITE)
+                              | (GC_pages_executable ? PROT_EXEC : 0)) != 0)
+    return NULL;
+  GC_cage_next += bytes;
 #      else
   result
       = mmap(MAKE_CPTR(last_addr), bytes,
@@ -2566,13 +2566,27 @@ GC_unix_mmap_get_mem(size_t bytes)
 #      endif
   if ((ADDR(result) % HBLKSIZE) != 0)
     ABORT("Memory returned by mmap is not aligned to HBLKSIZE");
+#      if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
   last_addr = ADDR(result) + bytes;
+#      endif
   GC_ASSERT((last_addr & (GC_page_size - 1)) == 0);
   return result;
 }
 #    endif /* !MSWIN_XBOX1 */
 
 #  endif /* MMAP_SUPPORTED */
+
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT) && defined(MMAP_SUPPORTED)
+GC_INNER void
+GC_release_cage(void)
+{
+  if (GC_cage_base != 0) {
+    (void)munmap(MAKE_CPTR(GC_cage_base), (size_t)((word)1 << 32));
+    GC_cage_base = 0;
+    GC_cage_next = 0;
+  }
+}
+#  endif
 
 #  if defined(USE_MMAP)
 
