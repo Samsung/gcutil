@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F15) is a self-contained **implementation spec**: it describes
+Each feature (F1–F26) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -59,6 +59,8 @@ Step  Feature  Description                          Depends on
 22    F22      Dynamic descriptor update API         (independent)
 23    F23      Explicitly typed alloc debug support  F9
 24    F24      Block-alloc GC trigger: net + scaled   F1
+25    F25      Coalesce free blocks before GC        F1, F24
+26    F26      Aligned 4-GiB compressed heap cage    F4, F10
 ```
 
 Dependency graph:
@@ -82,6 +84,8 @@ F21: needs F1 (custom mark procs)
 F22: standalone (independent)
 F23: needs F9 (for GCUtil.h)
 F24: needs F1 (it reshapes F1's periodic GC trigger)
+F25: needs F1 and F24 (it searches free blocks before collecting)
+F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
 ```
 
 ---
@@ -172,6 +176,10 @@ upstream's naming convention.
 ## F4. 32-bit address mode (ESCARGOT_USE_32BIT_IN_64BIT)
 
 **Depends on:** F1
+
+**Current end state:** F26 replaces the low-4-GiB POSIX allocation path below
+with an aligned 4-GiB cage. Keep these steps only to understand the historical
+implementation and the Windows fallback, which F26 does not change.
 
 ### What to do
 
@@ -1257,6 +1265,48 @@ TODO: transcribe the actual run numbers into this section.
 
 ---
 
+## F26. Reserve an aligned 4-GiB cage for compressed pointers
+
+**Depends on:** F4, F10
+
+### What to do
+
+1. **Per-isolate cage state (`include/private/gc_priv.h`, `misc.c`):** Add
+   `GC_cage_base` and `GC_cage_next` to `GC_arrays`. Expose
+   `GC_get_cage_base()` from `include/gc/gc.h` for use after `GC_init()`.
+   Release the reservation with `GC_release_cage()` before clearing
+   `GC_arrays` in `GC_deinit()`.
+
+2. **Cage reservation (`os_dep.c`):** Require `USE_MMAP` in compressed mode.
+   On first allocation, reserve 8 GiB with `mmap(PROT_NONE)`, select a
+   4-GiB-aligned 4-GiB interval inside it, and unmap both unused ends.
+   Leave its first page inaccessible so offset zero remains invalid.
+   Commit requested pages sequentially with `mprotect()` and return `NULL`
+   if the request would exceed the 4-GiB interval or protection fails.
+   Unmap the entire cage on deinitialization. This replaces F4's POSIX
+   low-address `MAP_32BIT` / `MAP_FIXED_NOREPLACE` search.
+
+3. **Exact 32-bit roots (`include/gc/gc_mark.h`, `mark.c`):** Add
+   `GC_mark_pair_32bit` and `GC_mark_and_push_32bit()` for known compressed
+   references. Add each offset to the cage base before the usual plausible
+   heap-bound check and mark operation.
+
+4. **Conservative roots (`mark.c`):** Inspect both halves of each 64-bit
+   stack word and Darwin register value. For candidate compressed offsets,
+   add the cage base before pushing. Retain the normal full-width pointer
+   scan as well.
+
+### Verification
+
+Build and run the compressed-pointer Escargot tests on Linux, Darwin, and
+Android with the matching GCutil commit. Check that heap growth at the cage
+limit returns an allocation failure, and that deinitialization releases the
+reservation. Keep the non-compressed GC path covered by its existing tests.
+
+**Commits:** `c51faaa6` (implementation), (this change)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1287,7 +1337,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F15 (in dependency order):
+2. For each feature F1–F26 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
