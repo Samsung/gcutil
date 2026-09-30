@@ -85,6 +85,87 @@ void GC_print_heap_usage();
 
 #endif
 
+#ifdef ESCARGOT_VALGRIND
+#include <valgrind/valgrind.h>
+
+namespace GCUtil {
+
+inline void* trackAllocation(void* ptr, size_t size)
+{
+    if (ptr) {
+        VALGRIND_MALLOCLIKE_BLOCK(ptr, size, 0, 0);
+    }
+    return ptr;
+}
+
+inline void* mallocTracked(size_t size)
+{
+    return trackAllocation(GC_malloc(size), size);
+}
+
+inline void* mallocAtomicTracked(size_t size)
+{
+    return trackAllocation(GC_malloc_atomic(size), size);
+}
+
+inline void* mallocUncollectableTracked(size_t size)
+{
+    return trackAllocation(GC_malloc_uncollectable(size), size);
+}
+
+inline void* mallocAtomicUncollectableTracked(size_t size)
+{
+    return trackAllocation(GC_malloc_atomic_uncollectable(size), size);
+}
+
+inline void* mallocTypedTracked(size_t size, GC_descr descriptor)
+{
+    return trackAllocation(GC_malloc_explicitly_typed(size, descriptor), size);
+}
+
+inline void* mallocKindTracked(size_t size, int kind)
+{
+    return trackAllocation(GC_generic_malloc(size, kind), size);
+}
+
+inline void* reallocTracked(void* ptr, size_t size)
+{
+    void* result = GC_realloc(ptr, size);
+    if (result == ptr && ptr) {
+        VALGRIND_FREELIKE_BLOCK(ptr, 0);
+    }
+    return trackAllocation(result, size);
+}
+
+inline void* reallocNoShrinkTracked(void* ptr, size_t size)
+{
+    void* result = GC_realloc_no_shrink(ptr, size);
+    if (result == ptr && ptr) {
+        VALGRIND_FREELIKE_BLOCK(ptr, 0);
+    }
+    return trackAllocation(result, size);
+}
+
+} // namespace GCUtil
+
+#undef GC_MALLOC
+#define GC_MALLOC(size) GCUtil::mallocTracked(size)
+#undef GC_MALLOC_ATOMIC
+#define GC_MALLOC_ATOMIC(size) GCUtil::mallocAtomicTracked(size)
+#undef GC_MALLOC_UNCOLLECTABLE
+#define GC_MALLOC_UNCOLLECTABLE(size) GCUtil::mallocUncollectableTracked(size)
+#undef GC_MALLOC_ATOMIC_UNCOLLECTABLE
+#define GC_MALLOC_ATOMIC_UNCOLLECTABLE(size) GCUtil::mallocAtomicUncollectableTracked(size)
+#undef GC_MALLOC_EXPLICITLY_TYPED
+#define GC_MALLOC_EXPLICITLY_TYPED(size, descriptor) GCUtil::mallocTypedTracked(size, descriptor)
+#undef GC_GENERIC_MALLOC
+#define GC_GENERIC_MALLOC(size, kind) GCUtil::mallocKindTracked(size, kind)
+#undef GC_REALLOC
+#define GC_REALLOC(ptr, size) GCUtil::reallocTracked(ptr, size)
+#undef GC_REALLOC_NO_SHRINK
+#define GC_REALLOC_NO_SHRINK(ptr, size) GCUtil::reallocNoShrinkTracked(ptr, size)
+#endif
+
 /* FIXME
  * This is just a workaround to remove ignore_off_page allocator.
  * `ignore_off_page` should be removed from everywhere after stablization.

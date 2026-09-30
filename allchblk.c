@@ -1336,6 +1336,9 @@ retry:
 }
 
 #ifdef VALGRIND_TRACKING
+#  ifdef ESCARGOT_VALGRIND
+#    include <valgrind/valgrind.h>
+#  endif
 /*
  * Note: this is intentionally defined in a file other than `malloc.c`
  * and `reclaim.c` files.
@@ -1349,6 +1352,9 @@ GC_free_profiler_hook(void *p)
 #  endif
   /* Prevent treating this function by the compiler as a no-op one. */
   GC_noop1_ptr(p);
+#  ifdef ESCARGOT_VALGRIND
+  VALGRIND_FREELIKE_BLOCK(p, 0);
+#  endif
 }
 #endif /* VALGRIND_TRACKING */
 

@@ -27,9 +27,6 @@
 #ifdef ESCARGOT_MEM_STATS
 #include <cstring>
 #include <map>
-#ifdef ESCARGOT_VALGRIND
-#include <valgrind/valgrind.h>
-#endif
 
 struct AllocInfo {
     GC_finalization_proc user_cb;
@@ -88,9 +85,6 @@ void unregisterGCAddress(void* address, void* data)
 
     addressTable().erase(it);
 
-#ifdef ESCARGOT_VALGRIND
-    VALGRIND_FREELIKE_BLOCK(address, 0);
-#endif
     // Unregister the callback function. This is necessary if an address have a
     // registered finalizer function, but the memory area is explicitly deallocated
     // by GC_FREE.
@@ -109,9 +103,6 @@ void registerGCAddress(void* address, size_t siz)
 
     createAddressEntry(address, siz);
 
-#ifdef ESCARGOT_VALGRIND
-    VALGRIND_MALLOCLIKE_BLOCK(address, siz, 0, 0);
-#endif
     // Calculate statistics.
     size_t waste = GC_size(address) - siz;
 
