@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F26) is a self-contained **implementation spec**: it describes
+Each feature (F1–F27) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -61,6 +61,7 @@ Step  Feature  Description                          Depends on
 24    F24      Block-alloc GC trigger: net + scaled   F1
 25    F25      Coalesce free blocks before GC        F1, F24
 26    F26      Aligned 4-GiB compressed heap cage    F4, F10
+27    F27      Massif tracking for GC allocations    F9
 ```
 
 Dependency graph:
@@ -86,6 +87,7 @@ F23: needs F9 (for GCUtil.h)
 F24: needs F1 (it reshapes F1's periodic GC trigger)
 F25: needs F1 and F24 (it searches free blocks before collecting)
 F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
+F27: needs F9 (wraps the GCUtil allocation macros)
 ```
 
 ---
@@ -1307,6 +1309,41 @@ reservation. Keep the non-compressed GC path covered by its existing tests.
 
 ---
 
+## F27. Track GC allocations in Valgrind Massif
+
+**Depends on:** F9
+
+### What to do
+
+1. **Allocation wrappers (`include/GCUtil.h`):** Under `ESCARGOT_VALGRIND`,
+   wrap the GC allocation macros for normal, atomic, uncollectable, typed,
+   kind-specific, and reallocating allocations. Report the requested size
+   with `VALGRIND_MALLOCLIKE_BLOCK` after a successful allocation. For an
+   in-place realloc, report `VALGRIND_FREELIKE_BLOCK` before registering the
+   replacement block at its new size.
+
+2. **Collection and explicit free (`allchblk.c`):** Under both
+   `VALGRIND_TRACKING` and `ESCARGOT_VALGRIND`, call
+   `VALGRIND_FREELIKE_BLOCK` from `GC_free_profiler_hook()`. Keep this in the
+   collector's free path so both explicit frees and reclaimed objects leave
+   Massif's allocation table.
+
+3. **Statistics registry (`Allocator.cpp`):** Remove the old Valgrind block
+   annotations from `registerGCAddress()` and `unregisterGCAddress()`.
+   They only cover allocations registered for Escargot statistics and would
+   double-count allocations once the GC macros are wrapped.
+
+### Verification
+
+Build Escargot with `ESCARGOT_VALGRIND` and `VALGRIND_TRACKING` enabled and
+run a Massif sample that allocates, reallocates, explicitly frees, and lets
+GC reclaim objects. Confirm that the allocation and free events balance and
+that profiling no longer depends on statistics finalizers.
+
+**Commits:** `6ccb0478` (implementation)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1337,7 +1374,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F26 (in dependency order):
+2. For each feature F1–F27 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
