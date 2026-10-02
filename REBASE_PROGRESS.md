@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F27) is a self-contained **implementation spec**: it describes
+Each feature (F1–F28) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -62,6 +62,7 @@ Step  Feature  Description                          Depends on
 25    F25      Coalesce free blocks before GC        F1, F24
 26    F26      Aligned 4-GiB compressed heap cage    F4, F10
 27    F27      Massif tracking for GC allocations    F9
+28    F28      Discard scans of freed large objects  (independent)
 ```
 
 Dependency graph:
@@ -88,6 +89,7 @@ F24: needs F1 (it reshapes F1's periodic GC trigger)
 F25: needs F1 and F24 (it searches free blocks before collecting)
 F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
 F27: needs F9 (wraps the GCUtil allocation macros)
+F28: standalone (independent mark-stack fix)
 ```
 
 ---
@@ -1344,6 +1346,45 @@ that profiling no longer depends on statistics finalizers.
 
 ---
 
+## F28. Discard pending scans of explicitly freed large objects
+
+**Depends on:** nothing (uses the existing collector mark stack)
+
+### What to do
+
+1. **Large explicit free (`malloc.c`, `GC_free_internal()`):** Before
+   `GC_freehblk()` releases a large object's blocks, check whether a
+   collection is in progress. If so, remove mark-stack entries whose
+   `mse_start` is in `[base, base + hhdr->hb_sz)`. Compact the stack by
+   replacing each matching entry with its last entry, then recheck that
+   replacement before advancing. Preserve all other pending marking work.
+
+2. **Keep the allocator lock held:** Incremental marking is paused while
+   the mutator runs this explicit-free path. Update `GC_mark_stack_top`
+   before releasing the blocks, so later allocations cannot reuse storage
+   still referenced by a queued scan. Keep the small-object free-list path
+   unchanged; its block header and object kind remain valid.
+
+A queued custom mark procedure can outlive a vector buffer freed between
+incremental marking slices. The freed blocks may then be coalesced or
+reallocated for another object. Running the old descriptor can pass an
+interior address to `GC_size()` and dereference a forwarding header as a
+real header, or scan the replacement object using the wrong layout. Do not
+work around this by accepting interior addresses in `GC_size()`; remove the
+obsolete marking work when the original object is explicitly freed.
+
+### Verification
+
+Run Release Web Tooling Benchmark with incremental GC, including jshint,
+and require all selected benchmarks and the final geometric mean to
+complete. Cover both compressed and full-width pointer configurations.
+Run the full Escargot CI-equivalent test suites on Linux i686 and amd64 to
+check that ordinary collection and explicit-free paths still work.
+
+**Commits:** `e29c7176` (implementation)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1374,7 +1415,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F27 (in dependency order):
+2. For each feature F1–F28 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
