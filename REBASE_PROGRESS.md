@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F28) is a self-contained **implementation spec**: it describes
+Each feature (F1–F29) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -63,6 +63,7 @@ Step  Feature  Description                          Depends on
 26    F26      Aligned 4-GiB compressed heap cage    F4, F10
 27    F27      Massif tracking for GC allocations    F9
 28    F28      Discard scans of freed large objects  (independent)
+29    F29      Compressed64 8-byte granules          F4
 ```
 
 Dependency graph:
@@ -90,6 +91,7 @@ F25: needs F1 and F24 (it searches free blocks before collecting)
 F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
 F27: needs F9 (wraps the GCUtil allocation macros)
 F28: standalone (independent mark-stack fix)
+F29: needs F4 (compressed-pointer build flag; changes the allocation ABI)
 ```
 
 ---
@@ -1385,6 +1387,53 @@ check that ordinary collection and explicit-free paths still work.
 
 ---
 
+## F29. Use 8-byte granules for compressed 64-bit heaps
+
+**Depends on:** F4
+
+### What to do
+
+1. **Public granule definition (`include/gc/gc_tiny_fl.h`):** When
+   `ESCARGOT_USE_32BIT_IN_64BIT` is enabled and `GC_SIZEOF_PTR == 8`, set
+   `GC_GRANULE_PTRS` to 1 and `GC_GRANULE_BYTES` to 8. Keep an explicitly
+   supplied `GC_GRANULE_BYTES` override ahead of this branch. Otherwise
+   retain the upstream two-pointer default: 8 bytes on 32-bit builds and
+   16 bytes on full-width 64-bit builds.
+
+2. **Collector/client ABI agreement:** Keep the selection in the public
+   header, rather than only in private collector configuration. Both the
+   collector and its clients must use the same compressed-pointer build
+   flag and granule size. Changing it alters free-list and mark-bit layout;
+   rebuild both sides together.
+
+3. **Debug allocation overhead (`include/private/dbg_mlc.h`):** For
+   `GC_GRANULE_BYTES == 8 && GC_SIZEOF_PTR == 8`, define
+   `UNCOLLECTABLE_DEBUG_BYTES` as `sizeof(oh) + 2 * sizeof(GC_uintptr_t)`.
+   Keep the original one-word addition for other configurations and retain
+   the existing `DEBUG_BYTES` adjustment for `EXTRA_BYTES`. This keeps the
+   debug overhead a multiple of 16, so a 16-byte payload such as Escargot's
+   Int128 does not move into an odd-granule size class with only 8-byte
+   alignment. Objects needing stronger alignment still require suitably
+   aligned size classes; the compressed pointer tags themselves need 8.
+
+The compressed heap's 4-byte slots do not require 16-byte allocation
+rounding. Using 8-byte granules reduces padding for small objects and
+buffers without changing the compressed slot representation.
+
+### Verification
+
+Run the full Escargot CI-equivalent test suites on Linux i686 and compressed
+amd64. Check full-width 64-bit builds retain their default 16-byte granules.
+Cover Debug allocation and GC tracing, including Temporal's Int128 payloads
+with a direct 16-byte alignment check. On ARM64, verify that the engine and
+collector both enable compressed pointers before comparing Octane and Web
+Tooling Benchmark on the same pinned CPU.
+
+**Reference:** `git diff e3c8edab..HEAD -- include/gc/gc_tiny_fl.h include/private/dbg_mlc.h`
+**Commits:** (this change)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1415,7 +1464,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F28 (in dependency order):
+2. For each feature F1–F29 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).

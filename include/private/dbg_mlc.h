@@ -129,7 +129,15 @@ typedef struct {
  * added to catch off-the-end pointers.  For uncollectible objects, the
  * extra byte is not added.
  */
-#  define UNCOLLECTABLE_DEBUG_BYTES (sizeof(oh) + sizeof(GC_uintptr_t))
+#  if GC_GRANULE_BYTES == 8 && GC_SIZEOF_PTR == 8
+/* Keep the debug overhead a multiple of 16. Otherwise a 16-byte-aligned
+ * payload (e.g. Escargot's Int128) would fall into an odd-granule size
+ * class and half of its allocations would be only 8-byte aligned.
+ */
+#    define UNCOLLECTABLE_DEBUG_BYTES (sizeof(oh) + 2 * sizeof(GC_uintptr_t))
+#  else
+#    define UNCOLLECTABLE_DEBUG_BYTES (sizeof(oh) + sizeof(GC_uintptr_t))
+#  endif
 #  define DEBUG_BYTES (UNCOLLECTABLE_DEBUG_BYTES - EXTRA_BYTES)
 #endif
 

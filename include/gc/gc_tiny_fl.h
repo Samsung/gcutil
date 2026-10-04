@@ -32,7 +32,7 @@
 #endif
 
 /*
- * We always set `GC_GRANULE_BYTES` to twice the length of a pointer.
+ * By default, `GC_GRANULE_BYTES` is twice the length of a pointer.
  * This means that all allocation requests are rounded up to the next
  * multiple of 16 on 64-bit architectures or 8 on 32-bit architectures.
  * This appears to be a reasonable compromise between fragmentation
@@ -46,12 +46,22 @@
  * It would always be safe, and often useful, to be able to allocate
  * very small objects with smaller alignment.  But that would cost us
  * mark bit space, so we no longer do so.
+ * Escargot's compressed 64-bit heap uses 8-byte granules instead; its
+ * pointer tags require no stronger alignment. Types requiring 16-byte
+ * alignment retain their corresponding aligned size classes.
  * `GC_GRANULE_BYTES` should not be overridden in any instances of the
  * collector library that may be shared between applications, since it
  * affects the ABI (application binary interface) to the library.
  */
 #ifdef GC_GRANULE_BYTES
 #  define GC_GRANULE_PTRS (GC_GRANULE_BYTES / GC_SIZEOF_PTR)
+#elif defined(ESCARGOT_USE_32BIT_IN_64BIT) && GC_SIZEOF_PTR == 8
+/* Escargot's compressed pointers require only 8-byte alignment. Keep
+ * this ABI choice in the public header so clients and the collector agree.
+ * Full-width builds retain the standard alignment below.
+ */
+#  define GC_GRANULE_PTRS 1
+#  define GC_GRANULE_BYTES 8
 #else
 #  define GC_GRANULE_PTRS 2 /*< in pointers */
 #  define GC_GRANULE_BYTES (GC_GRANULE_PTRS * GC_SIZEOF_PTR)
