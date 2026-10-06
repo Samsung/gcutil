@@ -954,6 +954,10 @@ GC_allochblk_from_free_lists(size_t lb_adjusted, int kind, unsigned flags,
     split_limit = 0;
   } else {
     split_limit = GC_enough_large_bytes_left();
+    /* Preserve the large-block reserve without withholding the small
+     * free-block classes from small requests. */
+    if (start_list < UNIQUE_THRESHOLD && split_limit < UNIQUE_THRESHOLD)
+      split_limit = UNIQUE_THRESHOLD;
 #ifdef USE_MUNMAP
     if (split_limit > 0)
       may_split = AVOID_SPLIT_REMAPPED;
