@@ -213,9 +213,86 @@ new_compressed_finalizable(void)
                                     NULL, NULL, NULL);
 }
 
+#    if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#    endif
+static void
+new_compressed_range_finalizable(unsigned kind)
+{
+  uint32_t *obj = (uint32_t *)GC_generic_malloc(64, (int)kind);
+  CHECK_OUT_OF_MEMORY(obj);
+  obj[0] = (uint32_t)(uintptr_t)obj;
+  obj[1] = new_compressed_target();
+  GC_register_finalizer_ignore_self(obj, compressed_bitmap_finalizer,
+                                    NULL, NULL, NULL);
+}
+
+static void
+test_compressed_range(void)
+{
+  static const size_t lengths[] = { 1, 2, 3, 255, 256, 257, 5001 };
+  unsigned kind = GC_new_kind_32bit();
+  size_t n, i;
+  uintptr_t high;
+  uint32_t *slots, *weak;
+
+  /* Exercise both halves of a native word, continuation boundaries,
+   * large objects, and reallocations which must preserve the kind. */
+  for (n = 0; n < sizeof(lengths) / sizeof(lengths[0]); ++n) {
+    size_t count = lengths[n];
+    slots = (uint32_t *)GC_generic_malloc(count * 4, (int)kind);
+    CHECK_OUT_OF_MEMORY(slots);
+    for (i = 0; i < count; ++i)
+      slots[i] = new_compressed_target();
+    high = (uintptr_t)slots & ~(uintptr_t)UINT32_MAX;
+    scrub_weak_stack();
+    GC_gcollect();
+    for (i = 0; i < count; ++i)
+      TEST_ASSERT(GC_is_marked((void *)(high | slots[i])));
+    slots = (uint32_t *)GC_REALLOC(slots, (count + 2) * 4);
+    CHECK_OUT_OF_MEMORY(slots);
+    slots[count] = new_compressed_target();
+    slots[count + 1] = new_compressed_target();
+    high = (uintptr_t)slots & ~(uintptr_t)UINT32_MAX;
+    scrub_weak_stack();
+    GC_gcollect();
+    for (i = 0; i < count + 2; ++i)
+      TEST_ASSERT(GC_is_marked((void *)(high | slots[i])));
+    GC_FREE(slots);
+  }
+
+  slots = (uint32_t *)GC_generic_malloc(16, (int)kind);
+  weak = (uint32_t *)GC_MALLOC_ATOMIC(4);
+  CHECK_OUT_OF_MEMORY(slots);
+  CHECK_OUT_OF_MEMORY(weak);
+  register_compressed_weak_target(weak);
+  slots[0] = *weak | 1U;
+  slots[1] = 0;
+  slots[2] = 2; /* Reserved first-page immediates are not allocations. */
+  slots[3] = 4;
+  scrub_weak_stack();
+  for (i = 0; i < 20; ++i)
+    GC_gcollect();
+  TEST_ASSERT(*weak == 0); /* Odd pseudo-pointers must not retain the target. */
+  TEST_ASSERT((slots[0] & 1U) != 0);
+  GC_FREE(weak);
+  GC_FREE(slots);
+  {
+    unsigned previous = compressed_finalized;
+    new_compressed_range_finalizable(kind);
+    scrub_weak_stack();
+    for (i = 0; i < 20; ++i) {
+      GC_gcollect();
+      GC_invoke_finalizers();
+    }
+    TEST_ASSERT(compressed_finalized == previous + 1);
+  }
+}
+
 static void
 test_compressed_bitmap(void)
 {
+  unsigned previous_finalized = compressed_finalized;
   GC_word bitmap[1] = { 0 };
   const GC_compressed_bitmap_descr *descr;
   struct compressed_slots {
@@ -279,7 +356,7 @@ test_compressed_bitmap(void)
   scrub_weak_stack();
   GC_gcollect();
   GC_invoke_finalizers();
-  TEST_ASSERT(compressed_finalized == 1);
+  TEST_ASSERT(compressed_finalized == previous_finalized + 1);
   {
     GC_word wide_bitmap[2] = { 0, 0 };
     uint32_t *wide;
@@ -621,6 +698,7 @@ main(void)
   test_edge_cases();
   test_gc_collection();
 #  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  test_compressed_range();
   test_compressed_bitmap();
   test_compressed_weak_link();
 #    ifdef ENABLE_DISCLAIM

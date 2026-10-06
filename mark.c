@@ -730,64 +730,97 @@ GC_mark_from(mse *mark_stack_top, const mse *mark_stack, mse *mark_stack_limit)
     current_p = mark_stack_top->mse_start;
     descr = mark_stack_top->mse_descr;
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-    if (UNLIKELY(((word)current_p & 1) != 0)) {
-      const GC_compressed_bitmap_descr *bitmap;
-      ptr_t payload;
-      word upper;
-      size_t slot;
-      word bits;
+    if (UNLIKELY(((word)current_p & 3) != 0)) {
+      if (UNLIKELY(((word)current_p & 2) != 0)) {
+        ptr_t payload = (ptr_t)((word)current_p & ~(word)2);
+        word upper = (word)payload & ~(word)0xffffffffU;
+        size_t bytes = descr;
+        ptr_t scan_end;
 
-      payload = (ptr_t)((word)current_p & ~(word)1);
-      --mark_stack_top;
-      if (descr == 0)
-        continue;
-      bitmap = (const GC_compressed_bitmap_descr *)descr;
-      if (bitmap == NULL)
-        continue;
-      upper = (word)payload & ~(word)0xffffffffU;
-      credit -= (GC_signed_word)(bitmap->object_size < HBLKSIZE
-                                    ? bitmap->object_size : HBLKSIZE);
-      if (bitmap->slots == 0)
-        continue;
-      if (UNLIKELY(bitmap->slots > GC_WORDSZ)) {
-        mark_stack_top = GC_mark_compressed_bitmap_multi(
-            payload, bitmap, mark_stack_top, mark_stack_limit,
-            least_ha, greatest_ha);
+        GC_ASSERT((descr & GC_DS_TAGS) == GC_DS_LENGTH);
+        /* Retain a bounded continuation in this entry.  This also limits the
+         * number of referents pushed before other marking work can proceed. */
+        if (bytes > PTRS_TO_BYTES(SPLIT_RANGE_PTRS)) {
+          bytes = PTRS_TO_BYTES(SPLIT_RANGE_PTRS);
+          mark_stack_top->mse_start = (ptr_t)((word)(payload + bytes) | 2);
+          mark_stack_top->mse_descr = descr - bytes;
+        } else {
+          --mark_stack_top;
+        }
+        credit -= (GC_signed_word)bytes;
+        scan_end = payload + bytes;
+        for (; ADDR_LT(payload, scan_end); payload += 4) {
+          unsigned32 low = *(unsigned32 *)payload;
+
+          if (low == 0 || (low & 1) != 0)
+            continue;
+          q = (ptr_t)(upper | (word)low);
+          if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
+            PREFETCH(q);
+            PUSH_CONTENTS(q, mark_stack_top, mark_stack_limit, payload);
+          }
+        }
         continue;
       }
-      /* Restrict the single word before scanning, including slots ==
-       * GC_WORDSZ without ever shifting by the word width. */
-      bits = GC_COMPRESSED_BITMAP(bitmap)[0]
-             & ~(~(word)0 << (bitmap->slots - 1) << 1);
-      while (bits != 0) {
-        unsigned32 low;
-        ptr_t source;
-#if defined(__GNUC__) || defined(__clang__)
-        slot = (unsigned)__builtin_ctzll((unsigned long long)bits);
-#else
-        word remaining = bits;
-        slot = 0;
-        while ((remaining & 1) == 0) {
-          remaining >>= 1;
-          ++slot;
-        }
-#endif
-        bits &= bits - 1;
-        source = payload + slot * 4;
-        low = *(unsigned32 *)source;
-        if (slot == bitmap->tagged_slot)
-          low &= ~bitmap->tag_mask;
-        /* Compressed pointer kinds are even.  Odd slots can hold tagged
-         * counts or integer values instead of a pointer. */
-        if (low == 0 || (low & 1) != 0)
+      {
+        const GC_compressed_bitmap_descr *bitmap;
+        ptr_t payload;
+        word upper;
+        size_t slot;
+        word bits;
+
+        payload = (ptr_t)((word)current_p & ~(word)1);
+        --mark_stack_top;
+        if (descr == 0)
           continue;
-        q = (ptr_t)(upper | (word)low);
-        if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
-          PREFETCH(q);
-          PUSH_CONTENTS(q, mark_stack_top, mark_stack_limit, source);
+        bitmap = (const GC_compressed_bitmap_descr *)descr;
+        if (bitmap == NULL)
+          continue;
+        upper = (word)payload & ~(word)0xffffffffU;
+        credit -= (GC_signed_word)(bitmap->object_size < HBLKSIZE
+                                      ? bitmap->object_size : HBLKSIZE);
+        if (bitmap->slots == 0)
+          continue;
+        if (UNLIKELY(bitmap->slots > GC_WORDSZ)) {
+          mark_stack_top = GC_mark_compressed_bitmap_multi(
+              payload, bitmap, mark_stack_top, mark_stack_limit,
+              least_ha, greatest_ha);
+          continue;
         }
+        /* Restrict the single word before scanning, including slots ==
+         * GC_WORDSZ without ever shifting by the word width. */
+        bits = GC_COMPRESSED_BITMAP(bitmap)[0]
+               & ~(~(word)0 << (bitmap->slots - 1) << 1);
+        while (bits != 0) {
+          unsigned32 low;
+          ptr_t source;
+  #if defined(__GNUC__) || defined(__clang__)
+          slot = (unsigned)__builtin_ctzll((unsigned long long)bits);
+  #else
+          word remaining = bits;
+          slot = 0;
+          while ((remaining & 1) == 0) {
+            remaining >>= 1;
+            ++slot;
+          }
+  #endif
+          bits &= bits - 1;
+          source = payload + slot * 4;
+          low = *(unsigned32 *)source;
+          if (slot == bitmap->tagged_slot)
+            low &= ~bitmap->tag_mask;
+          /* Compressed pointer kinds are even.  Odd slots can hold tagged
+           * counts or integer values instead of a pointer. */
+          if (low == 0 || (low & 1) != 0)
+            continue;
+          q = (ptr_t)(upper | (word)low);
+          if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
+            PREFETCH(q);
+            PUSH_CONTENTS(q, mark_stack_top, mark_stack_limit, source);
+          }
+        }
+        continue;
       }
-      continue;
     }
 #endif
   retry:
@@ -1108,21 +1141,6 @@ GC_mark_and_push_ptrs(mse *mark_stack_ptr,
   return mark_stack_ptr;
 }
 
-#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-GC_API mse *GC_CALL
-GC_mark_and_push_32bit(mse *top, mse *limit,
-                       const struct GC_mark_pair_32bit *pairs, int count)
-{
-  int i;
-  for (i = 0; i < count; ++i) {
-    ptr_t p = (ptr_t)(GC_cage_base + (word)pairs[i].offset);
-    if (ADDR_LT((ptr_t)GC_least_plausible_heap_addr, p)
-        && ADDR_LT(p, (ptr_t)GC_greatest_plausible_heap_addr))
-      top = GC_mark_and_push(p, top, limit, (void **)pairs[i].from);
-  }
-  return top;
-}
-#endif
 
 #ifdef PARALLEL_MARK
 
@@ -1785,6 +1803,20 @@ GC_push_many_regs(const word *regs, unsigned count)
 }
 #endif /* GC_WIN32_THREADS */
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API struct GC_ms_entry *GC_CALL
+GC_push_32bit_range(const void *start, size_t bytes, mse *mark_stack_top,
+                    mse *mark_stack_limit)
+{
+  GC_ASSERT((ADDR(start) & 3) == 0);
+  GC_ASSERT((bytes & 3) == 0);
+  if (bytes == 0)
+    return mark_stack_top;
+  return GC_ms_push_obj_descr((ptr_t)(ADDR(start) | 2), (word)bytes,
+                              mark_stack_top, mark_stack_limit);
+}
+#endif
+
 GC_API struct GC_ms_entry *GC_CALL
 GC_mark_and_push(void *obj, mse *mark_stack_top, mse *mark_stack_limit,
                  void **src)
@@ -2242,7 +2274,7 @@ GC_push_marked(struct hblk *h, const hdr *hhdr)
    */
   switch (
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-          (hhdr->hb_flags & COMPRESSED_BITMAP) != 0 ||
+          (hhdr->hb_flags & COMPRESSED_FORMAT_MASK) != 0 ||
 #endif
           (hhdr->hb_descr & GC_DS_TAGS) == GC_DS_PROC
               ? 0

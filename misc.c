@@ -2878,6 +2878,20 @@ GC_new_kind(void **fl, GC_word descr, int adjust, int clear)
   return result;
 }
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API unsigned GC_CALL
+GC_new_kind_32bit(void)
+{
+  unsigned result;
+
+  LOCK();
+  result = GC_new_kind_inner(GC_new_free_list_inner(), GC_DS_LENGTH, TRUE, TRUE);
+  GC_obj_kinds[result].ok_compressed = 2;
+  UNLOCK();
+  return result;
+}
+#endif
+
 GC_API unsigned GC_CALL
 GC_new_kind_enumerable(void **fl, GC_word descr, int adjust, int clear)
 {

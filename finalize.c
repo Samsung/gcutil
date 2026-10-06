@@ -750,22 +750,24 @@ GC_ignore_self_finalize_mark_proc(ptr_t p)
   ptr_t target_limit = p + hhdr->hb_sz - 1;
 
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-  if (GC_obj_kinds[hhdr->hb_obj_kind].ok_compressed) {
+  if ((hhdr->hb_flags & COMPRESSED_FORMAT_MASK) != 0) {
+    GC_bool is_bitmap = (hhdr->hb_flags & COMPRESSED_BITMAP) != 0;
     const GC_compressed_bitmap_descr *bitmap
-        = (const GC_compressed_bitmap_descr *)descr;
+        = is_bitmap ? (const GC_compressed_bitmap_descr *)descr : NULL;
     word upper = (word)p & ~(word)0xffffffffU;
-    size_t slot;
-    if (bitmap == NULL)
+    size_t slot, slots = is_bitmap ? (bitmap != NULL ? bitmap->slots : 0)
+                                    : hhdr->hb_sz / 4;
+    if (is_bitmap && bitmap == NULL)
       return;
-    for (slot = 0; slot < bitmap->slots; ++slot) {
+    for (slot = 0; slot < slots; ++slot) {
       unsigned32 low;
       ptr_t q;
       ptr_t source;
-      if (!GC_get_bit(GC_COMPRESSED_BITMAP(bitmap), slot))
+      if (is_bitmap && !GC_get_bit(GC_COMPRESSED_BITMAP(bitmap), slot))
         continue;
       source = p + slot * 4;
       low = *(unsigned32 *)source;
-      if (slot == bitmap->tagged_slot)
+      if (is_bitmap && slot == bitmap->tagged_slot)
         low &= ~bitmap->tag_mask;
       if (low == 0 || (low & 1) != 0)
         continue;

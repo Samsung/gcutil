@@ -353,6 +353,22 @@ GC_API unsigned GC_CALL GC_new_kind_inner(
     int /* `add_size_to_descriptor` */, int /* `clear_new_objects` */)
     GC_ATTR_NONNULL(1);
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+/* Return a zero-initialized kind for consecutive four-byte cage offsets.
+ * Zero and odd values are ignored; even values use normal heap displacement
+ * checks.  Allocate with GC_malloc_kind/GC_generic_malloc, without debug
+ * headers.  No bitmap, mark procedure, or per-object metadata is needed. */
+GC_API unsigned GC_CALL GC_new_kind_32bit(void);
+
+/* Queue a four-byte-aligned range inside a GC allocation for the same
+ * scanner.  The byte count must be a multiple of four. */
+GC_API struct GC_ms_entry *GC_CALL GC_push_32bit_range(
+    const void * /* start */, size_t /* bytes */,
+    struct GC_ms_entry * /* mark_stack_top */,
+    struct GC_ms_entry * /* mark_stack_limit */)
+    GC_ATTR_NONNULL(1) GC_ATTR_NONNULL(4);
+#endif
+
 /* Same as above but this kind of object can be enumerated safely.
  * See comments in GC_do_enumerate_reachable_objects for details */
 GC_API unsigned GC_CALL GC_new_kind_enumerable(
@@ -377,15 +393,6 @@ GC_API struct GC_ms_entry *GC_CALL GC_mark_and_push_ptrs(
     struct GC_ms_entry * /* `mark_stack_limit` */,
     struct GC_mark_pair* /* `src` */,
     const int number_of_sub_pointer);
-#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-struct GC_mark_pair_32bit {
-  const unsigned int *from;
-  unsigned int offset;
-};
-GC_API struct GC_ms_entry *GC_CALL GC_mark_and_push_32bit(
-    struct GC_ms_entry *mark_stack_top, struct GC_ms_entry *mark_stack_limit,
-    const struct GC_mark_pair_32bit *pairs, int count);
-#endif
 
 /**
  * Return a new mark procedure identifier, suitable for use as the first

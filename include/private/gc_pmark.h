@@ -119,7 +119,8 @@ GC_ms_push_obj_hdr(ptr_t obj, const hdr *hhdr, mse *mark_stack_top,
   if (!IS_PTRFREE(hhdr)) {
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
     obj = (ptr_t)((word)obj
-                  | (hhdr->hb_flags & COMPRESSED_BITMAP) / COMPRESSED_BITMAP);
+                  | (hhdr->hb_flags & COMPRESSED_FORMAT_MASK)
+                        / COMPRESSED_BITMAP);
     {
       mse *next = mark_stack_top + 1;
       /* Avoid a call for each newly marked object.  The existing helper

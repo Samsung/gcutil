@@ -403,7 +403,7 @@ GC_malloc_explicitly_typed_compressed(
     size_t object_size, const GC_compressed_bitmap_descr *descr)
 {
   if (descr == NULL || descr->object_size != object_size
-      || !GC_obj_kinds[descr->kind].ok_compressed)
+      || GC_obj_kinds[descr->kind].ok_compressed != 1)
     return NULL;
   return GC_malloc_kind(object_size, descr->kind);
 }

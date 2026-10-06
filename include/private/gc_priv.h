@@ -1308,6 +1308,8 @@ struct hblkhdr {
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
   /* Cache the kind's marking format without growing the block header. */
 #  define COMPRESSED_BITMAP 0x40
+#  define COMPRESSED_POINTERS 0x80
+#  define COMPRESSED_FORMAT_MASK (COMPRESSED_BITMAP | COMPRESSED_POINTERS)
 #endif
 
   /*
@@ -1701,8 +1703,8 @@ GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
 #endif
 
 #if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-  /* This kind's descriptor is a 4-byte-slot bitmap, stored in the kind. */
-  GC_bool ok_compressed;
+  /* 0: native, 1: shared 4-byte bitmap, 2: consecutive 4-byte slots. */
+  unsigned char ok_compressed;
 #endif
 #if !defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
     && !defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
@@ -2135,7 +2137,6 @@ struct _GC_arrays {
 #else
   GC_bool _explicit_typing_initialized;
 #endif
-
 
   /* Indicate whether a full collection due to heap growth is needed. */
 #define GC_need_full_gc GC_arrays._need_full_gc
