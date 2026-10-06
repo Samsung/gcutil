@@ -25,15 +25,39 @@
 #    define FINALIZER_CLOSURE_FLAG 0x1
 #  endif
 
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_INLINE ptr_t *
+GC_finalized_closure_slot(ptr_t obj)
+{
+  const hdr *hhdr;
+
+  GET_HDR(obj, hhdr);
+  return (ptr_t *)(obj + hhdr->hb_sz - sizeof(ptr_t));
+}
+#  endif
+
 STATIC int GC_CALLBACK
 GC_finalized_disclaim(void *obj)
 {
-#  ifdef AO_HAVE_load
-  ptr_t fc_p = GC_cptr_load((volatile ptr_t *)obj);
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  ptr_t *slot = GC_finalized_closure_slot((ptr_t)obj);
 #  else
-  ptr_t fc_p = *(ptr_t *)obj;
+  ptr_t *slot = (ptr_t *)obj;
+#  endif
+#  ifdef AO_HAVE_load
+  ptr_t fc_p = GC_cptr_load((volatile ptr_t *)slot);
+#  else
+  ptr_t fc_p = *slot;
 #  endif
 
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  /* Reclaim and explicit free clear every word except the free-list link.
+   * Allocations contain at least two words, so the closure cannot be that
+   * link even for an empty payload. */
+  if (fc_p != NULL) {
+    const struct GC_finalizer_closure *fc
+        = (const struct GC_finalizer_closure *)fc_p;
+#  else
   if ((ADDR(fc_p) & FINALIZER_CLOSURE_FLAG) != 0) {
     /*
      * The disclaim function may be passed fragments from the free-list,
@@ -50,6 +74,7 @@ GC_finalized_disclaim(void *obj)
     const struct GC_finalizer_closure *fc
         = (struct GC_finalizer_closure *)CPTR_CLEAR_FLAGS(
             fc_p, FINALIZER_CLOSURE_FLAG);
+#  endif
 
     GC_ASSERT(!GC_find_leak_inner);
     fc->proc((ptr_t)obj + GC_FINALIZED_MALLOC_USER_OFFSET, fc->cd);
@@ -81,6 +106,7 @@ GC_init_finalized_malloc(void)
     return;
   }
 
+#  if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
   /*
    * The finalizer closure is placed in the first pointer of the
    * object in order to use the lower bits to distinguish live
@@ -96,6 +122,8 @@ GC_init_finalized_malloc(void)
    */
   GC_register_displacement_inner(FINALIZER_CLOSURE_FLAG);
   GC_register_displacement_inner(sizeof(oh) | FINALIZER_CLOSURE_FLAG);
+
+#  endif
 
   GC_finalized_kind
       = GC_new_kind_inner(GC_new_free_list_inner(), GC_DS_LENGTH, TRUE, TRUE);
@@ -139,70 +167,60 @@ GC_register_disclaim_proc(int kind, GC_disclaim_proc proc,
   UNLOCK();
 }
 
-GC_API GC_ATTR_MALLOC void *GC_CALL
-GC_finalized_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
+STATIC void *
+GC_malloc_finalized(size_t lb, int kind,
+                    const struct GC_finalizer_closure *fclos)
 {
   void *op;
   ptr_t fc_p;
+  ptr_t *slot;
+  size_t allocation_size;
 
 #  ifndef LINT2
-  /* Actually, there is no data race because the variable is set once. */
-  GC_ASSERT(GC_finalized_kind != 0);
+  /* Actually, there is no data race because the kind is set once. */
+  GC_ASSERT(kind != 0);
 #  endif
   GC_ASSERT(NONNULL_ARG_NOT_NULL(fclos));
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  allocation_size = SIZET_SAT_ADD(lb, sizeof(ptr_t));
+  if (allocation_size < 2 * sizeof(ptr_t))
+    allocation_size = 2 * sizeof(ptr_t);
+#  else
   GC_ASSERT((ADDR(fclos) & FINALIZER_CLOSURE_FLAG) == 0);
-  op = GC_malloc_kind(SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET),
-                      (int)GC_finalized_kind);
+  allocation_size = SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET);
+#  endif
+  op = GC_malloc_kind(allocation_size, kind);
   if (UNLIKELY(NULL == op))
     return NULL;
 
-  /*
-   * Set the flag (w/o conversion to a numeric type) and store
-   * the finalizer closure.
-   */
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  fc_p = (ptr_t)GC_CAST_AWAY_CONST_PVOID(fclos);
+  slot = GC_finalized_closure_slot((ptr_t)op);
+#  else
   fc_p = CPTR_SET_FLAGS(GC_CAST_AWAY_CONST_PVOID(fclos),
                         FINALIZER_CLOSURE_FLAG);
-#  ifdef AO_HAVE_store
-  GC_cptr_store((volatile ptr_t *)op, fc_p);
-#  else
-  *(ptr_t *)op = fc_p;
+  slot = (ptr_t *)op;
 #  endif
-  GC_dirty(op);
+#  ifdef AO_HAVE_store
+  GC_cptr_store((volatile ptr_t *)slot, fc_p);
+#  else
+  *slot = fc_p;
+#  endif
+  GC_dirty(slot);
   REACHABLE_AFTER_DIRTY(fc_p);
   return (ptr_t)op + GC_FINALIZED_MALLOC_USER_OFFSET;
 }
 
 GC_API GC_ATTR_MALLOC void *GC_CALL
+GC_finalized_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
+{
+  return GC_malloc_finalized(lb, (int)GC_finalized_kind, fclos);
+}
+
+GC_API GC_ATTR_MALLOC void *GC_CALL
 GC_finalized_atomic_malloc(size_t lb, const struct GC_finalizer_closure *fclos)
 {
-  void *op;
-  ptr_t fc_p;
-
-#  ifndef LINT2
-  /* Actually, there is no data race because the variable is set once. */
-  GC_ASSERT(GC_finalized_ptrfree_kind != 0);
-#  endif
-  GC_ASSERT(NONNULL_ARG_NOT_NULL(fclos));
-  GC_ASSERT((ADDR(fclos) & FINALIZER_CLOSURE_FLAG) == 0);
-  op = GC_malloc_kind(SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET),
-                      (int)GC_finalized_ptrfree_kind);
-  if (UNLIKELY(NULL == op))
-    return NULL;
-
-  /*
-   * Set the flag (w/o conversion to a numeric type) and store
-   * the finalizer closure.
-   */
-  fc_p = CPTR_SET_FLAGS(GC_CAST_AWAY_CONST_PVOID(fclos),
-                        FINALIZER_CLOSURE_FLAG);
-#  ifdef AO_HAVE_store
-  GC_cptr_store((volatile ptr_t *)op, fc_p);
-#  else
-  *(ptr_t *)op = fc_p;
-#  endif
-  GC_dirty(op);
-  REACHABLE_AFTER_DIRTY(fc_p);
-  return (ptr_t)op + GC_FINALIZED_MALLOC_USER_OFFSET;
+  return GC_malloc_finalized(lb, (int)GC_finalized_ptrfree_kind, fclos);
 }
 
 #endif /* ENABLE_DISCLAIM */

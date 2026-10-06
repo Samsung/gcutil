@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F29) is a self-contained **implementation spec**: it describes
+Each feature (F1–F30) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -64,6 +64,7 @@ Step  Feature  Description                          Depends on
 27    F27      Massif tracking for GC allocations    F9
 28    F28      Discard scans of freed large objects  (independent)
 29    F29      Compressed64 8-byte granules          F4
+30    F30      Finalized closure in allocation tail F4, F15b
 ```
 
 Dependency graph:
@@ -92,6 +93,7 @@ F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
 F27: needs F9 (wraps the GCUtil allocation macros)
 F28: standalone (independent mark-stack fix)
 F29: needs F4 (compressed-pointer build flag; changes the allocation ABI)
+F30: needs F4 and F15b (same layout for normal and atomic finalized kinds)
 ```
 
 ---
@@ -747,11 +749,14 @@ dereference; the array-to-pointer decay yields the symbol's address directly.
    Register `GC_finalized_disclaim` for it.
 
 2. **fnlz_mlc.c:** Implement `GC_finalized_atomic_malloc(size_t lb, const struct GC_finalizer_closure *fclos)`:
-   - Allocate via `GC_malloc_kind(SIZET_SAT_ADD(lb, sizeof(ptr_t)), GC_finalized_ptrfree_kind)`
-   - Set the `FINALIZER_CLOSURE_FLAG` on the closure pointer and store it at the
-     start of the block (same pattern as `GC_finalized_malloc` but with ptrfree kind)
-   - `GC_dirty(op)` + `REACHABLE_AFTER_DIRTY(fc_p)`
-   - Return `(ptr_t *)op + 1`
+   - Share the closure storage helper with `GC_finalized_malloc`, selecting
+     `GC_finalized_ptrfree_kind` instead of the normal kind.
+   - Outside compressed mode, reserve `GC_FINALIZED_MALLOC_USER_OFFSET`
+     bytes before the payload (at least 8 bytes), store the tagged closure
+     in the first word, and return the payload after that prefix.
+   - In compressed mode, use F30's untagged tail closure and return the
+     allocation base. Do not reintroduce prefix displacement registration.
+   - Dirty the actual closure slot and retain `REACHABLE_AFTER_DIRTY(fc_p)`.
 
 3. **gc_priv.h:** Add `_finalized_ptrfree_kind` field to `struct _GC_arrays`
    with `#define GC_finalized_ptrfree_kind GC_arrays._finalized_ptrfree_kind`.
@@ -1434,6 +1439,75 @@ Tooling Benchmark on the same pinned CPU.
 
 ---
 
+## F30. Store finalized closures at the compressed allocation tail
+
+**Depends on:** F4 and F15b. Apply this before the later four-byte heap-slot
+marking changes; it does not depend on compressed bitmap descriptors.
+
+### What to do
+
+1. **Shared allocation (`fnlz_mlc.c`):** Keep both finalized kinds and
+   `GC_init_finalized_malloc()` initialization. For
+   `ESCARGOT_USE_32BIT_IN_64BIT`, reserve one pointer word after the requested
+   payload using saturating addition and allocate at least two pointer words.
+   Obtain the allocation header and place the untagged closure at
+   `base + hhdr->hb_sz - sizeof(ptr_t)`, after size-class rounding. Dirty that
+   slot, including its page for large allocations, and retain
+   `REACHABLE_AFTER_DIRTY(fc_p)`. Return the allocation base.
+
+2. **Public layout (`include/gc/gc_disclaim.h`):** Set
+   `GC_FINALIZED_MALLOC_USER_OFFSET` to zero only in compressed mode. Outside
+   that mode, preserve the tagged first-word closure and the existing prefix
+   offset, including 8-byte client alignment on native 32-bit builds. The
+   collector and client must agree on the build flag and be rebuilt together.
+
+3. **Reclaim (`GC_finalized_disclaim()`):** In compressed mode, read the same
+   final allocation word and invoke the closure only when it is non-null.
+   Sweeping and explicit free must clear this slot before a free-list object
+   can be examined again. `GC_clear_block()` and the initialized-kind explicit
+   free path already clear every word except the first free-list link; the
+   two-word minimum keeps the closure out of that link for an empty payload.
+   Preserve the existing tagged-first-word test outside compressed mode.
+   Leave the normal/atomic kinds' `mark_unconditionally` settings unchanged.
+
+4. **Displacements (`GC_init_finalized_malloc()`):** In compressed mode,
+   omit the old user-prefix offset, `FINALIZER_CLOSURE_FLAG`, and
+   `sizeof(oh) | FINALIZER_CLOSURE_FLAG` registrations. These registrations
+   permit interior pointers into every GC kind, not just finalized objects.
+   In the release 64-bit configuration, this removes offsets 8, 1, and 33.
+   Preserve all three registrations outside compressed mode.
+
+5. **Escargot client (`ThreadLocal::initialize()`):** Register
+   `GC_FINALIZED_MALLOC_USER_OFFSET + OtherPointerKind` only outside
+   compressed mode. With a canonical base pointer it duplicates
+   `OtherPointerKind`; the old layout also permitted offset 12 globally.
+   Retain the normal object and number tag registrations (4 and 2), leaving
+   the compressed release valid-offset table at 0, 2, and 4.
+
+Removing these global permissions prevents the corresponding false interior
+roots. Existing compressed scans may already reject odd values, so do not
+infer that registrations 1 and 33 alone explain previously observed leaks.
+
+### Verification
+
+Extend the existing `tests/typed.c` suite to cover normal and atomic finalized
+allocations with empty, rounding-boundary, small-block, and large payloads.
+Check canonical base pointers, 8-byte alignment, payload contents at callback
+time, repeated collections, and no callback after explicit free. Keep obsolete
+stack values from conservatively retaining the test allocations.
+
+Run the full Escargot CI-equivalent suites on Linux i686 and compressed amd64,
+including RegExp/Yarr's `GC_finalized_atomic_malloc()` callers. Probe valid
+interior offsets directly: 0, 2, and 4 remain accepted; 1, 8, 12, and 33 must
+be rejected with interior-pointer checking enabled. Compare Octane and Web
+Tooling Benchmark before and after on the same pinned ARM64 CPU, recording
+fixed-work average/maximum RSS and CPU frequency with both binaries.
+
+**Reference:** `git log -p -- fnlz_mlc.c include/gc/gc_disclaim.h tests/typed.c`
+**Commits:** (this change)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1464,7 +1538,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F29 (in dependency order):
+2. For each feature F1–F30 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).

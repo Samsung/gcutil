@@ -23,6 +23,105 @@
 #  include "gc/gc_mark.h"
 #  include "gc/gc_typed.h"
 
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT) && defined(ENABLE_DISCLAIM)
+#    include <stdint.h>
+#    include "gc/gc_disclaim.h"
+#    if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#    endif
+static void
+scrub_finalized_stack(void)
+{
+  volatile GC_word pad[4096];
+  size_t i;
+  for (i = 0; i < 4096; ++i)
+    pad[i] = 0;
+}
+
+static const size_t finalized_sizes[] = { 0, 1, 7, 8, 15, 16, 17, 2048,
+                                         4096, 65536 };
+#      define FINALIZED_SIZE_COUNT \
+  (sizeof(finalized_sizes) / sizeof(finalized_sizes[0]))
+#      define FINALIZED_REPETITIONS 32
+static unsigned finalized_counts[2][FINALIZED_SIZE_COUNT];
+static unsigned finalized_freed_count;
+static struct GC_finalizer_closure finalized_closures[2][FINALIZED_SIZE_COUNT];
+
+static void GC_CALLBACK
+finalized_payload_check(void *obj, void *cd)
+{
+  size_t id = (size_t)(uintptr_t)cd;
+  size_t kind = id % 2, index = id / 2, i;
+  const unsigned char *bytes = (const unsigned char *)obj;
+
+  TEST_ASSERT(GC_base(obj) == obj);
+  for (i = 0; i < finalized_sizes[index]; ++i)
+    TEST_ASSERT(bytes[i] == 0x5a);
+  TEST_ASSERT(++finalized_counts[kind][index] <= FINALIZED_REPETITIONS);
+}
+
+static void GC_CALLBACK
+finalized_freed_check(void *obj, void *cd)
+{
+  (void)obj;
+  (void)cd;
+  ++finalized_freed_count;
+}
+
+#      if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#      endif
+static void
+allocate_finalized_payloads(void)
+{
+  static const struct GC_finalizer_closure freed = { finalized_freed_check,
+                                                    NULL };
+  size_t kind, index, repeat;
+
+  for (kind = 0; kind < 2; ++kind) {
+    for (index = 0; index < FINALIZED_SIZE_COUNT; ++index) {
+      struct GC_finalizer_closure *fc = &finalized_closures[kind][index];
+      fc->proc = finalized_payload_check;
+      fc->cd = (void *)(uintptr_t)(index * 2 + kind);
+      for (repeat = 0; repeat < FINALIZED_REPETITIONS; ++repeat) {
+        size_t size = finalized_sizes[index];
+        void *obj = kind ? GC_finalized_atomic_malloc(size, fc)
+                         : GC_finalized_malloc(size, fc);
+        CHECK_OUT_OF_MEMORY(obj);
+        TEST_ASSERT(GC_base(obj) == obj);
+        TEST_ASSERT(((uintptr_t)obj & 7) == 0);
+        memset(obj, 0x5a, size);
+        GC_reachable_here(obj);
+      }
+      {
+        void *obj = kind ? GC_finalized_atomic_malloc(finalized_sizes[index],
+                                                      &freed)
+                         : GC_finalized_malloc(finalized_sizes[index], &freed);
+        CHECK_OUT_OF_MEMORY(obj);
+        GC_FREE(obj);
+      }
+    }
+  }
+}
+
+static void
+test_finalized_payloads(void)
+{
+  size_t kind, index, cycle;
+
+  GC_init_finalized_malloc();
+  allocate_finalized_payloads();
+  for (cycle = 0; cycle < 10; ++cycle) {
+    scrub_finalized_stack();
+    GC_gcollect();
+  }
+  TEST_ASSERT(finalized_freed_count == 0);
+  for (kind = 0; kind < 2; ++kind)
+    for (index = 0; index < FINALIZED_SIZE_COUNT; ++index)
+      TEST_ASSERT(finalized_counts[kind][index] > 0);
+}
+#    endif /* ENABLE_DISCLAIM */
+
 #  define ROUNDUP_WORDSZ(s) (((s) + GC_WORDSZ - 1) / GC_WORDSZ)
 
 /* Test basic functionality with small bitmap. */
@@ -336,6 +435,9 @@ main(void)
   test_memory_growth();
   test_edge_cases();
   test_gc_collection();
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT) && defined(ENABLE_DISCLAIM)
+  test_finalized_payloads();
+#  endif
 
   printf("SUCCEEDED\n");
 #endif
