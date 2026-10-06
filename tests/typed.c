@@ -23,7 +23,7 @@
 #  include "gc/gc_mark.h"
 #  include "gc/gc_typed.h"
 
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT) && defined(ENABLE_DISCLAIM)
+#  if defined(ENABLE_DISCLAIM)
 #    include <stdint.h>
 #    include "gc/gc_disclaim.h"
 #    if defined(__GNUC__) || defined(__clang__)
@@ -38,8 +38,8 @@ scrub_finalized_stack(void)
     pad[i] = 0;
 }
 
-static const size_t finalized_sizes[] = { 0, 1, 7, 8, 15, 16, 17, 2048,
-                                         4096, 65536 };
+static const size_t finalized_sizes[] = { 0, 1, 3, 4, 5, 7, 8, 15, 16, 17,
+                                         2048, 4096, 65536 };
 #      define FINALIZED_SIZE_COUNT \
   (sizeof(finalized_sizes) / sizeof(finalized_sizes[0]))
 #      define FINALIZED_REPETITIONS 32
@@ -435,7 +435,7 @@ main(void)
   test_memory_growth();
   test_edge_cases();
   test_gc_collection();
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT) && defined(ENABLE_DISCLAIM)
+#  if defined(ENABLE_DISCLAIM)
   test_finalized_payloads();
 #  endif
 

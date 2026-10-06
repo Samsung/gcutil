@@ -64,7 +64,7 @@ Step  Feature  Description                          Depends on
 27    F27      Massif tracking for GC allocations    F9
 28    F28      Discard scans of freed large objects  (independent)
 29    F29      Compressed64 8-byte granules          F4
-30    F30      Finalized closure in allocation tail F4, F15b
+30    F30      Finalized closure in allocation tail F15b
 ```
 
 Dependency graph:
@@ -93,7 +93,7 @@ F26: needs F4 and F10 (replaces low-address mmap with a per-isolate cage)
 F27: needs F9 (wraps the GCUtil allocation macros)
 F28: standalone (independent mark-stack fix)
 F29: needs F4 (compressed-pointer build flag; changes the allocation ABI)
-F30: needs F4 and F15b (same layout for normal and atomic finalized kinds)
+F30: needs F15b (same layout for normal and atomic finalized kinds)
 ```
 
 ---
@@ -751,11 +751,9 @@ dereference; the array-to-pointer decay yields the symbol's address directly.
 2. **fnlz_mlc.c:** Implement `GC_finalized_atomic_malloc(size_t lb, const struct GC_finalizer_closure *fclos)`:
    - Share the closure storage helper with `GC_finalized_malloc`, selecting
      `GC_finalized_ptrfree_kind` instead of the normal kind.
-   - Outside compressed mode, reserve `GC_FINALIZED_MALLOC_USER_OFFSET`
-     bytes before the payload (at least 8 bytes), store the tagged closure
-     in the first word, and return the payload after that prefix.
-   - In compressed mode, use F30's untagged tail closure and return the
-     allocation base. Do not reintroduce prefix displacement registration.
+   - Use F30's untagged tail closure and return the allocation base on all
+     targets, including native 32-bit and native 64-bit builds. Do not
+     reintroduce prefix displacement registration.
    - Dirty the actual closure slot and retain `REACHABLE_AFTER_DIRTY(fc_p)`.
 
 3. **gc_priv.h:** Add `_finalized_ptrfree_kind` field to `struct _GC_arrays`
@@ -1439,54 +1437,60 @@ Tooling Benchmark on the same pinned CPU.
 
 ---
 
-## F30. Store finalized closures at the compressed allocation tail
+## F30. Store finalized closures at the allocation tail on all targets
 
-**Depends on:** F4 and F15b. Apply this before the later four-byte heap-slot
+**Depends on:** F15b. Apply this before the later four-byte heap-slot
 marking changes; it does not depend on compressed bitmap descriptors.
 
 ### What to do
 
 1. **Shared allocation (`fnlz_mlc.c`):** Keep both finalized kinds and
-   `GC_init_finalized_malloc()` initialization. For
-   `ESCARGOT_USE_32BIT_IN_64BIT`, reserve one pointer word after the requested
-   payload using saturating addition and allocate at least two pointer words.
+   `GC_init_finalized_malloc()` initialization. In every pointer mode,
+   reserve one pointer word after the requested payload
+   using saturating addition and allocate at least two pointer words.
    Obtain the allocation header and place the untagged closure at
    `base + hhdr->hb_sz - sizeof(ptr_t)`, after size-class rounding. Dirty that
    slot, including its page for large allocations, and retain
    `REACHABLE_AFTER_DIRTY(fc_p)`. Return the allocation base.
 
 2. **Public layout (`include/gc/gc_disclaim.h`):** Set
-   `GC_FINALIZED_MALLOC_USER_OFFSET` to zero only in compressed mode. Outside
-   that mode, preserve the tagged first-word closure and the existing prefix
-   offset, including 8-byte client alignment on native 32-bit builds. The
-   collector and client must agree on the build flag and be rebuilt together.
+   `GC_FINALIZED_MALLOC_USER_OFFSET` to zero on every target. Native 32-bit
+   and native 64-bit builds use the same tail layout as compressed builds.
+   The allocation base preserves the collector's granule alignment (8 bytes
+   on native 32-bit, 16 bytes on native 64-bit, and 8 bytes on compressed
+   64-bit). Rebuild the collector and all clients together for this ABI change.
 
-3. **Reclaim (`GC_finalized_disclaim()`):** In compressed mode, read the same
+3. **Reclaim (`GC_finalized_disclaim()`):** On all targets, read the same
    final allocation word and invoke the closure only when it is non-null.
    Sweeping and explicit free must clear this slot before a free-list object
    can be examined again. `GC_clear_block()` and the initialized-kind explicit
    free path already clear every word except the first free-list link; the
    two-word minimum keeps the closure out of that link for an empty payload.
-   Preserve the existing tagged-first-word test outside compressed mode.
-   Leave the normal/atomic kinds' `mark_unconditionally` settings unchanged.
+   Remove the tagged-first-word test and closure flag definitions. Leave
+   the normal/atomic kinds' `mark_unconditionally` settings unchanged.
 
-4. **Displacements (`GC_init_finalized_malloc()`):** In compressed mode,
-   omit the old user-prefix offset, `FINALIZER_CLOSURE_FLAG`, and
+4. **Displacements (`GC_init_finalized_malloc()`):** On all targets, omit
+   the old user-prefix offset, `FINALIZER_CLOSURE_FLAG`, and
    `sizeof(oh) | FINALIZER_CLOSURE_FLAG` registrations. These registrations
    permit interior pointers into every GC kind, not just finalized objects.
    In the release 64-bit configuration, this removes offsets 8, 1, and 33.
-   Preserve all three registrations outside compressed mode.
+   Native 32-bit likewise stops permitting the prefix and tagged-closure
+   offsets; the debug header offset depends on pointer width and configuration.
+   Do not retain or re-register them in native or debug builds.
 
 5. **Escargot client (`ThreadLocal::initialize()`):** Register
-   `GC_FINALIZED_MALLOC_USER_OFFSET + OtherPointerKind` only outside
-   compressed mode. With a canonical base pointer it duplicates
-   `OtherPointerKind`; the old layout also permitted offset 12 globally.
+   only `OtherPointerKind` and `NumberPointerKind`. Remove
+   `GC_FINALIZED_MALLOC_USER_OFFSET + OtherPointerKind` entirely: with a
+   canonical base pointer it duplicates `OtherPointerKind`; the old layout
+   also permitted offset 12 globally.
    Retain the normal object and number tag registrations (4 and 2), leaving
    the compressed release valid-offset table at 0, 2, and 4.
 
 Removing these global permissions prevents the corresponding false interior
-roots. Existing compressed scans may already reject odd values, so do not
-infer that registrations 1 and 33 alone explain previously observed leaks.
+roots in paths that check registered offsets. Conservative paths which allow
+all interior pointers remain unchanged. Existing compressed scans may already
+reject odd values, so do not infer that registrations 1 and 33 alone explain
+previously observed leaks.
 
 ### Verification
 
@@ -1496,11 +1500,14 @@ Check canonical base pointers, 8-byte alignment, payload contents at callback
 time, repeated collections, and no callback after explicit free. Keep obsolete
 stack values from conservatively retaining the test allocations.
 
-Run the full Escargot CI-equivalent suites on Linux i686 and compressed amd64,
-including RegExp/Yarr's `GC_finalized_atomic_malloc()` callers. Probe valid
-interior offsets directly: 0, 2, and 4 remain accepted; 1, 8, 12, and 33 must
+Run the finalized payload tests on native 32-bit, native 64-bit, and compressed
+64-bit collectors. Run the full Escargot CI-equivalent suites on Linux i686
+and compressed amd64, including RegExp/Yarr's `GC_finalized_atomic_malloc()`
+callers. Probe valid interior offsets directly: 0, 2, and 4 remain accepted;
+1, 8, 12, and 33 must
 be rejected with interior-pointer checking enabled. Compare Octane and Web
-Tooling Benchmark before and after on the same pinned ARM64 CPU, recording
+Tooling Benchmark before and after on the same pinned ARM32 CPU for the native
+32-bit change (and ARM64 for compressed-path changes), recording
 fixed-work average/maximum RSS and CPU frequency with both binaries.
 
 **Reference:** `git log -p -- fnlz_mlc.c include/gc/gc_disclaim.h tests/typed.c`

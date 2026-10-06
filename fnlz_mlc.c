@@ -16,16 +16,7 @@
 #ifdef ENABLE_DISCLAIM
 
 #  include "gc/gc_disclaim.h"
-#  include "private/dbg_mlc.h" /*< for `oh` type */
 
-#  if defined(KEEP_BACK_PTRS) || defined(MAKE_BACK_GRAPH)
-/* The first bit is already used for a debug purpose. */
-#    define FINALIZER_CLOSURE_FLAG 0x2
-#  else
-#    define FINALIZER_CLOSURE_FLAG 0x1
-#  endif
-
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
 GC_INLINE ptr_t *
 GC_finalized_closure_slot(ptr_t obj)
 {
@@ -34,50 +25,26 @@ GC_finalized_closure_slot(ptr_t obj)
   GET_HDR(obj, hhdr);
   return (ptr_t *)(obj + hhdr->hb_sz - sizeof(ptr_t));
 }
-#  endif
 
 STATIC int GC_CALLBACK
 GC_finalized_disclaim(void *obj)
 {
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
   ptr_t *slot = GC_finalized_closure_slot((ptr_t)obj);
-#  else
-  ptr_t *slot = (ptr_t *)obj;
-#  endif
 #  ifdef AO_HAVE_load
   ptr_t fc_p = GC_cptr_load((volatile ptr_t *)slot);
 #  else
   ptr_t fc_p = *slot;
 #  endif
 
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
   /* Reclaim and explicit free clear every word except the free-list link.
    * Allocations contain at least two words, so the closure cannot be that
    * link even for an empty payload. */
   if (fc_p != NULL) {
     const struct GC_finalizer_closure *fc
         = (const struct GC_finalizer_closure *)fc_p;
-#  else
-  if ((ADDR(fc_p) & FINALIZER_CLOSURE_FLAG) != 0) {
-    /*
-     * The disclaim function may be passed fragments from the free-list,
-     * on which it should not run finalization.  To recognize this case,
-     * we use the fact that the value of the first pointer of such
-     * fragments is always, at least, multiple of a pointer size (a link
-     * to the next fragment, or `NULL`).
-     *
-     * Note: if it is desirable to have a finalizer which does not use
-     * the first pointer for storing the finalization information,
-     * `GC_disclaim_and_reclaim()` must be extended to clear fragments
-     * so that the assumption holds for the selected pointer location.
-     */
-    const struct GC_finalizer_closure *fc
-        = (struct GC_finalizer_closure *)CPTR_CLEAR_FLAGS(
-            fc_p, FINALIZER_CLOSURE_FLAG);
-#  endif
 
     GC_ASSERT(!GC_find_leak_inner);
-    fc->proc((ptr_t)obj + GC_FINALIZED_MALLOC_USER_OFFSET, fc->cd);
+    fc->proc(obj, fc->cd);
   }
   return 0;
 }
@@ -105,25 +72,6 @@ GC_init_finalized_malloc(void)
     UNLOCK();
     return;
   }
-
-#  if !defined(ESCARGOT_USE_32BIT_IN_64BIT)
-  /*
-   * The finalizer closure is placed in the first pointer of the
-   * object in order to use the lower bits to distinguish live
-   * objects from objects on the free list.  The downside of this is
-   * that we need interior pointers at GC_FINALIZED_MALLOC_USER_OFFSET, and that
-   * `GC_base()` does not return the start of the user region.
-   */
-  GC_register_displacement_inner(GC_FINALIZED_MALLOC_USER_OFFSET);
-
-  /*
-   * And, the pointer to the finalizer closure object itself is displaced
-   * due to baking in this indicator.
-   */
-  GC_register_displacement_inner(FINALIZER_CLOSURE_FLAG);
-  GC_register_displacement_inner(sizeof(oh) | FINALIZER_CLOSURE_FLAG);
-
-#  endif
 
   GC_finalized_kind
       = GC_new_kind_inner(GC_new_free_list_inner(), GC_DS_LENGTH, TRUE, TRUE);
@@ -181,26 +129,15 @@ GC_malloc_finalized(size_t lb, int kind,
   GC_ASSERT(kind != 0);
 #  endif
   GC_ASSERT(NONNULL_ARG_NOT_NULL(fclos));
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
   allocation_size = SIZET_SAT_ADD(lb, sizeof(ptr_t));
   if (allocation_size < 2 * sizeof(ptr_t))
     allocation_size = 2 * sizeof(ptr_t);
-#  else
-  GC_ASSERT((ADDR(fclos) & FINALIZER_CLOSURE_FLAG) == 0);
-  allocation_size = SIZET_SAT_ADD(lb, GC_FINALIZED_MALLOC_USER_OFFSET);
-#  endif
   op = GC_malloc_kind(allocation_size, kind);
   if (UNLIKELY(NULL == op))
     return NULL;
 
-#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
   fc_p = (ptr_t)GC_CAST_AWAY_CONST_PVOID(fclos);
   slot = GC_finalized_closure_slot((ptr_t)op);
-#  else
-  fc_p = CPTR_SET_FLAGS(GC_CAST_AWAY_CONST_PVOID(fclos),
-                        FINALIZER_CLOSURE_FLAG);
-  slot = (ptr_t *)op;
-#  endif
 #  ifdef AO_HAVE_store
   GC_cptr_store((volatile ptr_t *)slot, fc_p);
 #  else
@@ -208,7 +145,7 @@ GC_malloc_finalized(size_t lb, int kind,
 #  endif
   GC_dirty(slot);
   REACHABLE_AFTER_DIRTY(fc_p);
-  return (ptr_t)op + GC_FINALIZED_MALLOC_USER_OFFSET;
+  return op;
 }
 
 GC_API GC_ATTR_MALLOC void *GC_CALL

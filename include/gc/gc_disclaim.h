@@ -25,17 +25,8 @@ extern "C" {
  * (i.e. with `ENABLE_DISCLAIM` macro defined).
  */
 
-/*
- * Offset from the collector allocation base to the client-visible object.
- * It keeps finalized allocations at least 8-byte aligned on 32-bit targets.
- */
-#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
-/* The closure occupies the allocation's last word, after the payload. */
-#  define GC_FINALIZED_MALLOC_USER_OFFSET ((size_t)0)
-#else
-#  define GC_FINALIZED_MALLOC_USER_OFFSET \
-    (sizeof(void *) < 8 ? (size_t)8 : sizeof(void *))
-#endif
+/* Finalized allocations return their GC base; the closure follows the payload. */
+#define GC_FINALIZED_MALLOC_USER_OFFSET ((size_t)0)
 
 /**
  * Prepare the object kind used by `GC_finalized_malloc`.  Call it from
@@ -80,10 +71,9 @@ struct GC_finalizer_closure {
  * object in case it is a heap-allocated one) will be protected from
  * collection.  Note that `GC_size()` (applied to such allocated object)
  * returns a value slightly bigger than the specified allocation size.
- * The returned object is at least 8-byte aligned.  `GC_base()` points to an
- * internal header before the allocated object (8 bytes on supported 32-bit
- * and 64-bit targets), except in the compressed Escargot build, where
- * the closure follows the payload and the returned pointer is the GC base.
+ * The returned object is at least 8-byte aligned and is its own `GC_base()`.
+ * The untagged finalizer closure is stored after the payload in the
+ * allocation's last pointer word.
  * The disclaim procedure is not invoked in the find-leak mode.
  * There is no debugging variant of this allocation function.
  */
