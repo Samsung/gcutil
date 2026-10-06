@@ -802,11 +802,12 @@ GC_free_internal(void *base, const hdr *hhdr, size_t clear_ofs,
     if (clear_lb > 0)
       BZERO((ptr_t)base + clear_ofs, clear_lb);
 
-    /*
-     * It is unnecessary to clear the mark bit.  If the object is reallocated,
-     * it does not matter.  Otherwise, the collector will do it, since it is
-     * on a free list.
-     */
+    /* An explicitly freed object can still be in a block awaiting lazy
+     * reclamation.  Keep it marked until that block is swept, otherwise the
+     * sweep inserts the same object into the free list a second time. */
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    GC_set_mark_bit(base);
+#endif
 
     flh = &ok->ok_freelist[lg];
     obj_link(base) = *flh;

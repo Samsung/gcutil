@@ -43,6 +43,9 @@ struct disappearing_link {
 #  define dl_set_next(x, y) \
     (void)((x)->prolog.next = (struct hash_chain_entry *)(y))
   GC_hidden_pointer dl_hidden_obj; /*< pointer to object base */
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  GC_bool dl_compressed; /*< link occupies one four-byte slot */
+#endif
 };
 
 struct finalizable_object {
@@ -166,10 +169,17 @@ GC_register_disappearing_link(void **link)
   return GC_general_register_disappearing_link(link, base);
 }
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#  define GC_COMPRESSED_LINK_ARG(arg) , arg
+#else
+#  define GC_COMPRESSED_LINK_ARG(arg)
+#endif
+
 STATIC int
 GC_register_disappearing_link_inner(struct dl_hashtbl_s *dl_hashtbl,
                                     void **link, const void *obj,
-                                    const char *tbl_log_name)
+                                    const char *tbl_log_name
+                                    GC_COMPRESSED_LINK_ARG(GC_bool compressed))
 {
   struct disappearing_link *curr_dl;
   size_t index;
@@ -180,7 +190,12 @@ GC_register_disappearing_link_inner(struct dl_hashtbl_s *dl_hashtbl,
     return GC_UNIMPLEMENTED;
 #  ifdef GC_ASSERTIONS
   /* Just check accessibility. */
-  GC_noop1_ptr(*link);
+#    if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (compressed)
+    CHECK_MEMORY_READ(link);
+  else
+#    endif
+    GC_noop1_ptr(*link);
 #  endif
   LOCK();
   GC_ASSERT(obj != NULL && GC_base_C(obj) == obj);
@@ -197,6 +212,9 @@ GC_register_disappearing_link_inner(struct dl_hashtbl_s *dl_hashtbl,
     if (curr_dl->dl_hidden_link == GC_HIDE_POINTER(link)) {
       /* Alternatively, `GC_HIDE_NZ_POINTER()` could be used instead. */
       curr_dl->dl_hidden_obj = GC_HIDE_POINTER(obj);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+      curr_dl->dl_compressed = compressed;
+#endif
       UNLOCK();
       return GC_DUPLICATE;
     }
@@ -220,6 +238,9 @@ GC_register_disappearing_link_inner(struct dl_hashtbl_s *dl_hashtbl,
          curr_dl = dl_next(curr_dl)) {
       if (curr_dl->dl_hidden_link == GC_HIDE_POINTER(link)) {
         curr_dl->dl_hidden_obj = GC_HIDE_POINTER(obj);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+        curr_dl->dl_compressed = compressed;
+#endif
         UNLOCK();
 #  ifndef DBG_HDRS_ALL
         /* Free unused `new_dl` returned by `GC_oom_fn()`. */
@@ -231,6 +252,9 @@ GC_register_disappearing_link_inner(struct dl_hashtbl_s *dl_hashtbl,
   }
   new_dl->dl_hidden_obj = GC_HIDE_POINTER(obj);
   new_dl->dl_hidden_link = GC_HIDE_POINTER(link);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  new_dl->dl_compressed = compressed;
+#endif
   dl_set_next(new_dl, dl_hashtbl->head[index]);
   GC_dirty(new_dl);
   dl_hashtbl->head[index] = new_dl;
@@ -245,8 +269,20 @@ GC_general_register_disappearing_link(void **link, const void *obj)
 {
   if ((ADDR(link) & (ALIGNMENT - 1)) != 0 || !NONNULL_ARG_NOT_NULL(link))
     ABORT("Bad arg to GC_general_register_disappearing_link");
-  return GC_register_disappearing_link_inner(&GC_dl_hashtbl, link, obj, "dl");
+  return GC_register_disappearing_link_inner(&GC_dl_hashtbl, link, obj, "dl"
+                                             GC_COMPRESSED_LINK_ARG(FALSE));
 }
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API int GC_CALL
+GC_general_register_disappearing_link_compressed(void *link, const void *obj)
+{
+  if ((ADDR(link) & 3) != 0 || !NONNULL_ARG_NOT_NULL(link))
+    ABORT("Bad arg to GC_general_register_disappearing_link_compressed");
+  return GC_register_disappearing_link_inner(&GC_dl_hashtbl, (void **)link,
+                                             obj, "compressed dl", TRUE);
+}
+#endif
 
 #  ifdef DBG_HDRS_ALL
 #    define FREE_DL_ENTRY(curr_dl) dl_set_next(curr_dl, NULL)
@@ -305,6 +341,25 @@ GC_unregister_disappearing_link(void **link)
   FREE_DL_ENTRY(curr_dl);
   return 1;
 }
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API int GC_CALL
+GC_unregister_disappearing_link_compressed(void *link)
+{
+  struct disappearing_link *curr_dl;
+
+  if ((ADDR(link) & 3) != 0)
+    return 0;
+  LOCK();
+  curr_dl = GC_unregister_disappearing_link_inner(&GC_dl_hashtbl,
+                                                   (void **)link);
+  UNLOCK();
+  if (curr_dl == NULL)
+    return 0;
+  FREE_DL_ENTRY(curr_dl);
+  return 1;
+}
+#endif
 
 /*
  * Mark from one finalizable object using the specified mark procedure.
@@ -543,7 +598,7 @@ GC_register_long_link(void **link, const void *obj)
   if ((ADDR(link) & (ALIGNMENT - 1)) != 0 || !NONNULL_ARG_NOT_NULL(link))
     ABORT("Bad arg to GC_register_long_link");
   return GC_register_disappearing_link_inner(&GC_ll_hashtbl, link, obj,
-                                             "long dl");
+                                             "long dl" GC_COMPRESSED_LINK_ARG(FALSE));
 }
 
 GC_API int GC_CALL
@@ -694,6 +749,33 @@ GC_ignore_self_finalize_mark_proc(ptr_t p)
   ptr_t scan_limit;
   ptr_t target_limit = p + hhdr->hb_sz - 1;
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (GC_obj_kinds[hhdr->hb_obj_kind].ok_compressed) {
+    const GC_compressed_bitmap_descr *bitmap
+        = (const GC_compressed_bitmap_descr *)descr;
+    word upper = (word)p & ~(word)0xffffffffU;
+    size_t slot;
+    if (bitmap == NULL)
+      return;
+    for (slot = 0; slot < bitmap->slots; ++slot) {
+      unsigned32 low;
+      ptr_t q;
+      ptr_t source;
+      if (!GC_get_bit(GC_COMPRESSED_BITMAP(bitmap), slot))
+        continue;
+      source = p + slot * 4;
+      low = *(unsigned32 *)source;
+      if (slot == bitmap->tagged_slot)
+        low &= ~bitmap->tag_mask;
+      if (low == 0 || (low & 1) != 0)
+        continue;
+      q = (ptr_t)(upper | (word)low);
+      if (ADDR_LT(q, p) || ADDR_LT(target_limit, q))
+        GC_PUSH_ONE_HEAP(q, source, GC_mark_stack_top);
+    }
+    return;
+  }
+#endif
   if ((descr & GC_DS_TAGS) == GC_DS_LENGTH) {
     scan_limit = p + descr - sizeof(ptr_t);
   } else {
@@ -1024,7 +1106,12 @@ GC_make_disappearing_links_disappear(struct dl_hashtbl_s *dl_hashtbl,
       next_dl = dl_next(curr_dl);
 #  if defined(GC_ASSERTIONS) && !defined(THREAD_SANITIZER)
       /* Check accessibility of the location pointed by the link. */
-      GC_noop1_ptr(*(ptr_t *)GC_REVEAL_POINTER(curr_dl->dl_hidden_link));
+#    if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+      if (curr_dl->dl_compressed)
+        CHECK_MEMORY_READ(GC_REVEAL_POINTER(curr_dl->dl_hidden_link));
+      else
+#    endif
+        GC_noop1_ptr(*(ptr_t *)GC_REVEAL_POINTER(curr_dl->dl_hidden_link));
 #  endif
       if (is_remove_dangling) {
         ptr_t real_link
@@ -1040,7 +1127,12 @@ GC_make_disappearing_links_disappear(struct dl_hashtbl_s *dl_hashtbl,
           prev_dl = curr_dl;
           continue;
         }
-        *(ptr_t *)GC_REVEAL_POINTER(curr_dl->dl_hidden_link) = NULL;
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+        if (curr_dl->dl_compressed)
+          *(unsigned32 *)GC_REVEAL_POINTER(curr_dl->dl_hidden_link) = 0;
+        else
+#  endif
+          *(ptr_t *)GC_REVEAL_POINTER(curr_dl->dl_hidden_link) = NULL;
       }
 
       /* Delete `curr_dl` entry from `dl_hashtbl`. */

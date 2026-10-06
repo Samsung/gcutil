@@ -117,6 +117,20 @@ GC_ms_push_obj_hdr(ptr_t obj, const hdr *hhdr, mse *mark_stack_top,
 {
   GC_ASSERT(!HBLK_IS_FREE(hhdr));
   if (!IS_PTRFREE(hhdr)) {
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+    obj = (ptr_t)((word)obj
+                  | (hhdr->hb_flags & COMPRESSED_BITMAP) / COMPRESSED_BITMAP);
+    {
+      mse *next = mark_stack_top + 1;
+      /* Avoid a call for each newly marked object.  The existing helper
+       * still handles mark-stack overflow. */
+      if (LIKELY(ADDR_LT((ptr_t)next, (ptr_t)mark_stack_limit))) {
+        next->mse_start = obj;
+        next->mse_descr = hhdr->hb_descr;
+        return next;
+      }
+    }
+#endif
     mark_stack_top = GC_ms_push_obj_descr(obj, hhdr->hb_descr, mark_stack_top,
                                           mark_stack_limit);
   }
@@ -381,6 +395,13 @@ GC_ms_push_contents_hdr(ptr_t current, hdr *hhdr, mse *mark_stack_top,
       mark_stack_top = GC_mark_and_push(                              \
           p, mark_stack_top, GC_mark_stack_limit, (void **)(source)); \
   } while (0)
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_INNER mse *GC_mark_compressed_bitmap_multi(
+    ptr_t payload, const GC_compressed_bitmap_descr *bitmap,
+    mse *mark_stack_top, mse *mark_stack_limit,
+    ptr_t least_ha, ptr_t greatest_ha);
+#endif
 
 /*
  * Mark objects pointed to by the regions described by mark stack entries

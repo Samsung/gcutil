@@ -320,6 +320,95 @@ GC_malloc_explicitly_typed(size_t lb, GC_descr d)
   return op;
 }
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+STATIC const GC_compressed_bitmap_descr *
+GC_make_compressed_bitmap_descriptor_inner(size_t object_size,
+    const GC_word *bitmap, size_t slots, GC_bool enumerable,
+    size_t tagged_slot, GC_word tag_mask)
+{
+  GC_compressed_bitmap_descr *result;
+  size_t words;
+  const GC_word zero = 0;
+
+  if (sizeof(ptr_t) != 8 || object_size == 0
+      || slots > object_size / 4
+      || (slots != 0 && bitmap == NULL)
+      || tag_mask > (GC_word)0xffffffffU
+      || (tag_mask != 0 && (tagged_slot >= slots
+                            || !GC_get_bit(bitmap, tagged_slot))))
+    return NULL;
+  words = slots / GC_WORDSZ + (slots % GC_WORDSZ != 0);
+  if (words > (GC_SIZE_MAX
+               - offsetof(GC_compressed_bitmap_descr, bits))
+                  / sizeof(GC_word))
+    return NULL;
+  if (words == 0)
+    words = 1;
+  /* Use the existing initialization path; the old descriptor format and
+   * typed allocation kind remain unchanged. */
+  (void)GC_make_descriptor(&zero, 0);
+  result = (GC_compressed_bitmap_descr *)GC_malloc_atomic_uncollectable(
+      offsetof(GC_compressed_bitmap_descr, bits)
+          + words * sizeof(GC_word));
+  if (result == NULL)
+    return NULL;
+  result->object_size = object_size;
+  result->slots = slots;
+  result->tagged_slot = tagged_slot;
+  result->tag_mask = (unsigned32)tag_mask;
+  if (slots != 0)
+    BCOPY(bitmap, result->bits, words * sizeof(GC_word));
+  LOCK();
+  result->kind = GC_new_kind_inner(GC_new_free_list_inner(),
+                                    (GC_word)result, FALSE, TRUE);
+  GC_obj_kinds[result->kind].ok_compressed = TRUE;
+  GC_obj_kinds[result->kind].ok_eager_sweep = enumerable;
+  UNLOCK();
+  return result;
+}
+
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_compressed_bitmap_descriptor(size_t object_size,
+    const GC_word *bitmap, size_t slots)
+{
+  return GC_make_compressed_bitmap_descriptor_inner(object_size, bitmap,
+                                                     slots, FALSE, GC_SIZE_MAX, 0);
+}
+
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_enumerable_compressed_bitmap_descriptor(size_t object_size,
+    const GC_word *bitmap, size_t slots)
+{
+  return GC_make_compressed_bitmap_descriptor_inner(object_size, bitmap,
+                                                     slots, TRUE, GC_SIZE_MAX, 0);
+}
+
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_compressed_bitmap_descriptor_with_tag(size_t object_size,
+    const GC_word *bitmap, size_t slots, size_t tagged_slot,
+    GC_word tag_mask, int enumerable)
+{
+  return GC_make_compressed_bitmap_descriptor_inner(object_size, bitmap,
+      slots, (GC_bool)(enumerable != 0), tagged_slot, tag_mask);
+}
+
+GC_API unsigned GC_CALL
+GC_compressed_bitmap_descriptor_kind(const GC_compressed_bitmap_descr *descr)
+{
+  return descr != NULL ? descr->kind : 0;
+}
+
+GC_API void *GC_CALL
+GC_malloc_explicitly_typed_compressed(
+    size_t object_size, const GC_compressed_bitmap_descr *descr)
+{
+  if (descr == NULL || descr->object_size != object_size
+      || !GC_obj_kinds[descr->kind].ok_compressed)
+    return NULL;
+  return GC_malloc_kind(object_size, descr->kind);
+}
+#endif
+
 GC_API GC_ATTR_MALLOC void *GC_CALL
 GC_malloc_explicitly_typed_ignore_off_page(size_t lb, GC_descr d)
 {
@@ -760,3 +849,58 @@ GC_array_mark_proc(word *addr, mse *mark_stack_top, mse *mark_stack_limit,
   }
   return new_mark_stack_top;
 }
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_ATTR_NO_SANITIZE_ADDR_MEM_THREAD
+GC_ATTR_NOINLINE
+GC_INNER mse *
+GC_mark_compressed_bitmap_multi(ptr_t payload,
+                               const GC_compressed_bitmap_descr *bitmap,
+                               mse *mark_stack_top, mse *mark_stack_limit,
+                               ptr_t least_ha, ptr_t greatest_ha)
+{
+  const word upper = (word)payload & ~(word)0xffffffffU;
+  size_t slot, word_index;
+  ptr_t q;
+  DECLARE_HDR_CACHE;
+
+  INIT_HDR_CACHE;
+  for (word_index = 0; word_index < bitmap->slots / GC_WORDSZ
+                               + (bitmap->slots % GC_WORDSZ != 0);
+       ++word_index) {
+    word bits = GC_COMPRESSED_BITMAP(bitmap)[word_index];
+    while (bits != 0) {
+      unsigned32 low;
+      ptr_t source;
+#if defined(__GNUC__) || defined(__clang__)
+      slot = word_index * GC_WORDSZ
+             + (unsigned)__builtin_ctzll((unsigned long long)bits);
+#else
+      word remaining = bits;
+      slot = word_index * GC_WORDSZ;
+      while ((remaining & 1) == 0) {
+        remaining >>= 1;
+        ++slot;
+      }
+#endif
+      bits &= bits - 1;
+      if (slot >= bitmap->slots)
+        break;
+      source = payload + slot * 4;
+      low = *(unsigned32 *)source;
+      if (slot == bitmap->tagged_slot)
+        low &= ~bitmap->tag_mask;
+      /* Compressed pointer kinds are even.  Odd slots can hold tagged
+       * counts or integer values instead of a pointer. */
+      if (low == 0 || (low & 1) != 0)
+        continue;
+      q = (ptr_t)(upper | (word)low);
+      if (ADDR_LT(least_ha, q) && ADDR_LT(q, greatest_ha)) {
+        PREFETCH(q);
+        PUSH_CONTENTS(q, mark_stack_top, mark_stack_limit, source);
+      }
+    }
+  }
+  return mark_stack_top;
+}
+#endif

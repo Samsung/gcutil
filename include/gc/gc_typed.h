@@ -71,6 +71,42 @@ typedef GC_word *GC_bitmap;
 
 typedef GC_word GC_descr;
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+/* A separate typed allocation format whose bitmap counts 4-byte slots.
+ * Every marked slot contains the low 32 bits of a pointer in the same 4-GiB
+ * cage as the allocation; zero is null.  No native pointer fields may occur
+ * in an object allocated with this format.  This API is supported only by
+ * compressed 64-bit builds.  Legacy descriptors retain native word units.
+ * The descriptor is invalid after GC_deinit and must be made again after
+ * reinitialization.  Objects cannot be passed to GC_realloc or GC_reallocf.
+ */
+typedef struct GC_compressed_bitmap_descr GC_compressed_bitmap_descr;
+
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_compressed_bitmap_descriptor(size_t /* object_size */,
+    const GC_word * /* bitmap */, size_t /* slots */);
+
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_enumerable_compressed_bitmap_descriptor(size_t /* object_size */,
+    const GC_word * /* bitmap */, size_t /* slots */);
+
+/* Like the compressed descriptor constructors above, but clear tag_mask
+ * from tagged_slot before marking its pointer.  The slot must be marked
+ * in bitmap; no other slot is masked.  enumerable enables eager sweep. */
+GC_API const GC_compressed_bitmap_descr *GC_CALL
+GC_make_compressed_bitmap_descriptor_with_tag(size_t /* object_size */,
+    const GC_word * /* bitmap */, size_t /* slots */,
+    size_t /* tagged_slot */, GC_word /* tag_mask */, int /* enumerable */);
+
+GC_API unsigned GC_CALL
+GC_compressed_bitmap_descriptor_kind(const GC_compressed_bitmap_descr *);
+
+GC_API GC_ATTR_MALLOC GC_ATTR_ALLOC_SIZE(1) void *GC_CALL
+GC_malloc_explicitly_typed_compressed(size_t /* object_size */,
+    const GC_compressed_bitmap_descr *);
+
+#endif
+
 /**
  * Return a type descriptor for the object whose layout is described
  * by the first argument.  The least significant bit of the first

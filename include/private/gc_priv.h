@@ -81,8 +81,22 @@
 
 #include "gc/gc_mark.h"
 #include "gc/gc_tiny_fl.h"
+#include "gc/gc_typed.h"
 
 typedef GC_word word;
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+struct GC_compressed_bitmap_descr {
+  size_t object_size;
+  size_t slots;
+  size_t tagged_slot;
+  unsigned kind;
+  unsigned tag_mask;
+  GC_word bits[1];
+};
+
+#define GC_COMPRESSED_BITMAP(d) ((d)->bits)
+#endif
 
 #ifndef PTR_T_DEFINED
 /*
@@ -1291,6 +1305,11 @@ struct hblkhdr {
 #  define LARGE_BLOCK 0x20
 #endif
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  /* Cache the kind's marking format without growing the block header. */
+#  define COMPRESSED_BITMAP 0x40
+#endif
+
   /*
    * Value of `GC_gc_no` when block was last allocated or swept.
    * May wrap.  For a free block, this is maintained only for `USE_MUNMAP`,
@@ -1621,13 +1640,14 @@ struct back_edges_s {
 
 /* Object kinds. */
 #ifndef MAXOBJKINDS
-#  ifdef GC_DEBUG
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#    define MAXOBJKINDS 192
+#  elif defined(GC_DEBUG)
 #    define MAXOBJKINDS 32
 #  else
 /* Escargot registers several custom typed-GC kinds on top of BDWGC's own
- * built-in kinds (e.g. BackingStore, ByteCodeBlock); 16 is not enough
- * headroom once those stack up under SMALL_CONFIG, so SMALL_CONFIG no
- * longer gets its own smaller value here -- both branches use 24. */
+ * kinds.  Compressed typed allocations use one kind per bitmap so no
+ * descriptor word is needed in each object. */
 #    define MAXOBJKINDS 24
 #  endif
 #endif
@@ -1678,6 +1698,11 @@ GC_EXTERN MAY_THREAD_LOCAL struct obj_kind {
 #  define OK_DISCLAIM_INITZ /* comma */ , FALSE, 0
 #else
 #  define OK_DISCLAIM_INITZ /*< empty */
+#endif
+
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  /* This kind's descriptor is a 4-byte-slot bitmap, stored in the kind. */
+  GC_bool ok_compressed;
 #endif
 #if !defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
     && !defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
@@ -2110,6 +2135,7 @@ struct _GC_arrays {
 #else
   GC_bool _explicit_typing_initialized;
 #endif
+
 
   /* Indicate whether a full collection due to heap growth is needed. */
 #define GC_need_full_gc GC_arrays._need_full_gc

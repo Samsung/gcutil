@@ -23,23 +23,17 @@
 #  include "gc/gc_mark.h"
 #  include "gc/gc_typed.h"
 
-#  if defined(ENABLE_DISCLAIM)
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
 #    include <stdint.h>
-#    include "gc/gc_disclaim.h"
-#    if defined(__GNUC__) || defined(__clang__)
-__attribute__((noinline))
+#    ifdef ENABLE_DISCLAIM
+#      include "gc/gc_disclaim.h"
 #    endif
-static void
-scrub_finalized_stack(void)
-{
-  volatile GC_word pad[4096];
-  size_t i;
-  for (i = 0; i < 4096; ++i)
-    pad[i] = 0;
-}
 
-static const size_t finalized_sizes[] = { 0, 1, 3, 4, 5, 7, 8, 15, 16, 17,
-                                         2048, 4096, 65536 };
+#    ifdef ENABLE_DISCLAIM
+static void scrub_weak_stack(void);
+
+static const size_t finalized_sizes[] = { 0, 1, 7, 8, 15, 16, 17, 2048,
+                                         4096, 65536 };
 #      define FINALIZED_SIZE_COUNT \
   (sizeof(finalized_sizes) / sizeof(finalized_sizes[0]))
 #      define FINALIZED_REPETITIONS 32
@@ -112,7 +106,7 @@ test_finalized_payloads(void)
   GC_init_finalized_malloc();
   allocate_finalized_payloads();
   for (cycle = 0; cycle < 10; ++cycle) {
-    scrub_finalized_stack();
+    scrub_weak_stack();
     GC_gcollect();
   }
   TEST_ASSERT(finalized_freed_count == 0);
@@ -121,6 +115,197 @@ test_finalized_payloads(void)
       TEST_ASSERT(finalized_counts[kind][index] > 0);
 }
 #    endif /* ENABLE_DISCLAIM */
+
+static uint32_t
+new_compressed_target(void)
+{
+  void *target = GC_MALLOC(32);
+  CHECK_OUT_OF_MEMORY(target);
+  return (uint32_t)(uintptr_t)target;
+}
+
+#    if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#    endif
+static void
+register_compressed_weak_target(uint32_t *link)
+{
+  void *target = GC_MALLOC(32);
+  CHECK_OUT_OF_MEMORY(target);
+  *link = (uint32_t)(uintptr_t)target;
+  TEST_ASSERT(GC_general_register_disappearing_link_compressed(
+      link, GC_base(target)) == GC_SUCCESS);
+}
+
+#    if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#    endif
+static void
+scrub_weak_stack(void)
+{
+  volatile GC_word pad[4096];
+  size_t i;
+  for (i = 0; i < 4096; ++i)
+    pad[i] = 0;
+}
+
+static void
+test_compressed_weak_link(void)
+{
+  GC_word bitmap[1] = { 0 };
+  const GC_compressed_bitmap_descr *descr;
+  struct compressed_weak {
+    uint32_t link;
+    uint32_t neighbor;
+    uint32_t ignored[GC_WORDSZ - 2];
+  } *object;
+  int i;
+
+  /* Bitmap bits outside the described slots must not retain pointers,
+   * even when the corresponding storage is part of the allocation. */
+  GC_set_bit(bitmap, GC_WORDSZ - 1);
+  descr = GC_make_compressed_bitmap_descriptor(sizeof(*object), bitmap, 2);
+  TEST_ASSERT(descr != NULL);
+  object = (struct compressed_weak *)GC_malloc_explicitly_typed_compressed(
+      sizeof(*object), descr);
+  CHECK_OUT_OF_MEMORY(object);
+  object->neighbor = 0x12345678U;
+  register_compressed_weak_target(&object->link);
+  register_compressed_weak_target(&object->ignored[GC_WORDSZ - 3]);
+  /* Do not let a pointer left in the stack by registration retain the
+   * weak target.  Reading the compressed link before GC can also root it. */
+  scrub_weak_stack();
+  for (i = 0; i < 20; ++i)
+    GC_gcollect();
+  TEST_ASSERT(object->link == 0);
+  TEST_ASSERT(object->ignored[GC_WORDSZ - 3] == 0);
+  TEST_ASSERT(object->neighbor == 0x12345678U);
+  GC_FREE(object);
+}
+
+static unsigned compressed_finalized;
+static void
+compressed_bitmap_finalizer(void *obj, void *data)
+{
+  const uint32_t *slots = (const uint32_t *)obj;
+  uintptr_t high = (uintptr_t)obj & ~(uintptr_t)UINT32_MAX;
+  (void)data;
+  TEST_ASSERT(GC_is_marked((void *)(high | (slots[1] & ~1U))));
+  ++compressed_finalized;
+}
+#    if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#    endif
+static void
+new_compressed_finalizable(void)
+{
+  const GC_compressed_bitmap_descr *descr;
+  GC_word bitmap[1] = { 0 };
+  uint32_t *obj;
+  GC_set_bit(bitmap, 1);
+  descr = GC_make_compressed_bitmap_descriptor_with_tag(64, bitmap, 2, 1, 1, 0);
+  TEST_ASSERT(descr != NULL);
+  obj = (uint32_t *)GC_malloc_explicitly_typed_compressed(64, descr);
+  CHECK_OUT_OF_MEMORY(obj);
+  obj[0] = 0;
+  obj[1] = new_compressed_target() | 1U;
+  GC_register_finalizer_ignore_self(obj, compressed_bitmap_finalizer,
+                                    NULL, NULL, NULL);
+}
+
+static void
+test_compressed_bitmap(void)
+{
+  GC_word bitmap[1] = { 0 };
+  const GC_compressed_bitmap_descr *descr;
+  struct compressed_slots {
+    uint32_t lower;
+    uint32_t upper;
+  } *object;
+  uintptr_t high;
+
+  GC_set_bit(bitmap, 0);
+  descr = GC_make_compressed_bitmap_descriptor(sizeof(*object), bitmap, 2);
+  TEST_ASSERT(descr != NULL);
+  TEST_ASSERT(GC_make_compressed_bitmap_descriptor(sizeof(*object),
+      bitmap, 3) == NULL);
+  object = (struct compressed_slots *)GC_malloc_explicitly_typed_compressed(
+      sizeof(*object), descr);
+  CHECK_OUT_OF_MEMORY(object);
+  TEST_ASSERT(GC_malloc_explicitly_typed_compressed(sizeof(*object) - 1,
+                                                    descr) == NULL);
+  object->lower = new_compressed_target();
+  object->upper = 0;
+  high = (uintptr_t)object & ~(uintptr_t)UINT32_MAX;
+  GC_gcollect();
+  TEST_ASSERT(GC_is_marked((void *)(high | object->lower)));
+  GC_FREE(object);
+
+  bitmap[0] = 0;
+  GC_set_bit(bitmap, 1);
+  descr = GC_make_compressed_bitmap_descriptor(sizeof(*object), bitmap, 2);
+  TEST_ASSERT(descr != NULL);
+  object = (struct compressed_slots *)GC_malloc_explicitly_typed_compressed(
+      sizeof(*object), descr);
+  CHECK_OUT_OF_MEMORY(object);
+  object->lower = 0;
+  object->upper = new_compressed_target();
+  high = (uintptr_t)object & ~(uintptr_t)UINT32_MAX;
+  GC_gcollect();
+  TEST_ASSERT(GC_is_marked((void *)(high | object->upper)));
+  GC_FREE(object);
+
+  descr = GC_make_compressed_bitmap_descriptor_with_tag(sizeof(*object),
+      bitmap, 2, 1, 1, 0);
+  TEST_ASSERT(descr != NULL);
+  TEST_ASSERT(GC_make_compressed_bitmap_descriptor_with_tag(sizeof(*object),
+      bitmap, 2, 0, 1, 0) == NULL);
+  TEST_ASSERT(GC_make_compressed_bitmap_descriptor_with_tag(sizeof(*object),
+      bitmap, 2, 2, 1, 0) == NULL);
+  object = (struct compressed_slots *)GC_malloc_explicitly_typed_compressed(
+      sizeof(*object), descr);
+  CHECK_OUT_OF_MEMORY(object);
+  object->lower = 0;
+  object->upper = new_compressed_target() | 1U;
+  high = (uintptr_t)object & ~(uintptr_t)UINT32_MAX;
+  GC_gcollect();
+  TEST_ASSERT((object->upper & 1U) != 0);
+  TEST_ASSERT(GC_is_marked((void *)(high | (object->upper & ~1U))));
+  object->upper = 1; /* Tagged empty must not retain a heap object. */
+  GC_gcollect();
+  TEST_ASSERT(object->upper == 1);
+  GC_FREE(object);
+  new_compressed_finalizable();
+  scrub_weak_stack();
+  GC_gcollect();
+  GC_invoke_finalizers();
+  TEST_ASSERT(compressed_finalized == 1);
+  {
+    GC_word wide_bitmap[2] = { 0, 0 };
+    uint32_t *wide;
+    GC_set_bit(wide_bitmap, 0);
+    GC_set_bit(wide_bitmap, GC_WORDSZ - 1);
+    GC_set_bit(wide_bitmap, GC_WORDSZ);
+    descr = GC_make_compressed_bitmap_descriptor(
+        (GC_WORDSZ + 1) * 4, wide_bitmap, GC_WORDSZ + 1);
+    TEST_ASSERT(descr != NULL);
+    wide = (uint32_t *)GC_malloc_explicitly_typed_compressed(
+        (GC_WORDSZ + 1) * 4, descr);
+    CHECK_OUT_OF_MEMORY(wide);
+    memset(wide, 0, (GC_WORDSZ + 1) * 4);
+    wide[0] = new_compressed_target();
+    wide[GC_WORDSZ - 1] = new_compressed_target();
+    wide[GC_WORDSZ] = new_compressed_target();
+    high = (uintptr_t)wide & ~(uintptr_t)UINT32_MAX;
+    GC_gcollect();
+    TEST_ASSERT(GC_is_marked((void *)(high | wide[0])));
+    TEST_ASSERT(GC_is_marked((void *)(high | wide[GC_WORDSZ - 1])));
+    TEST_ASSERT(GC_is_marked((void *)(high | wide[GC_WORDSZ])));
+    GC_FREE(wide);
+  }
+
+}
+#  endif
 
 #  define ROUNDUP_WORDSZ(s) (((s) + GC_WORDSZ - 1) / GC_WORDSZ)
 
@@ -435,8 +620,12 @@ main(void)
   test_memory_growth();
   test_edge_cases();
   test_gc_collection();
-#  if defined(ENABLE_DISCLAIM)
+#  if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  test_compressed_bitmap();
+  test_compressed_weak_link();
+#    ifdef ENABLE_DISCLAIM
   test_finalized_payloads();
+#    endif
 #  endif
 
   printf("SUCCEEDED\n");

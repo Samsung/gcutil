@@ -1462,6 +1462,11 @@ GC_API /* `realloc` attribute */ GC_ATTR_ALLOC_SIZE(2) void *GC_CALL
 #define GC_GENERAL_REGISTER_DISAPPEARING_LINK_SAFE(link, obj) \
   GC_general_register_disappearing_link(                      \
       link, GC_base(GC_CAST_AWAY_CONST_PVOID(obj)))
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+#define GC_GENERAL_REGISTER_DISAPPEARING_LINK_COMPRESSED_SAFE(link, obj) \
+  GC_general_register_disappearing_link_compressed(                      \
+      link, GC_base(GC_CAST_AWAY_CONST_PVOID(obj)))
+#endif
 #define GC_REGISTER_LONG_LINK_SAFE(link, obj) \
   GC_register_long_link(link, GC_base(GC_CAST_AWAY_CONST_PVOID(obj)))
 
@@ -1764,6 +1769,16 @@ GC_API int GC_CALL GC_general_register_disappearing_link(
     void ** /* `link` */, const void * /* `obj` */) GC_ATTR_NONNULL(1)
     GC_ATTR_NONNULL(2);
 
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+/* Like GC_general_register_disappearing_link, but `link` points to one
+ * four-byte compressed pointer slot.  The collector clears exactly four
+ * bytes when the target dies. */
+GC_API int GC_CALL GC_general_register_disappearing_link_compressed(
+    void * /* `link` */, const void * /* `obj` */) GC_ATTR_NONNULL(1)
+    GC_ATTR_NONNULL(2);
+
+#endif
+
 /**
  * Moves a `link` previously registered via
  * `GC_general_register_disappearing_link` (or
@@ -1785,6 +1800,10 @@ GC_API int GC_CALL GC_move_disappearing_link(void ** /* `link` */,
  * not actually registered (otherwise returns 1).
  */
 GC_API int GC_CALL GC_unregister_disappearing_link(void ** /* `link` */);
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+GC_API int GC_CALL GC_unregister_disappearing_link_compressed(
+    void * /* `link` */);
+#endif
 
 /**
  * Similar to `GC_general_register_disappearing_link` but `*link` only

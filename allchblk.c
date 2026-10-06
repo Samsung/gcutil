@@ -347,6 +347,10 @@ setup_header(hdr *hhdr, struct hblk *block, size_t lb_adjusted, int kind,
     flags |= LARGE_BLOCK;
 #endif
   ok = &GC_obj_kinds[kind];
+#if defined(ESCARGOT_USE_32BIT_IN_64BIT)
+  if (ok->ok_compressed)
+    flags |= COMPRESSED_BITMAP;
+#endif
 #ifdef ENABLE_DISCLAIM
   if (ok->ok_disclaim_proc)
     flags |= HAS_DISCLAIM;
