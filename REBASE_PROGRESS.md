@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F30) is a self-contained **implementation spec**: it describes
+Each feature (F1–F34) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -65,6 +65,10 @@ Step  Feature  Description                          Depends on
 28    F28      Discard scans of freed large objects  (independent)
 29    F29      Compressed64 8-byte granules          F4
 30    F30      Finalized closure in allocation tail F15b
+31    F31      Reuse small free-block size classes   F24, F25
+32    F32      Shared four-byte bitmap descriptors   F1, F4, F20, F26
+33    F33      Direct consecutive four-byte scans    F32
+34    F34      Respect GC policy at trigger sites    F24
 ```
 
 Dependency graph:
@@ -94,6 +98,10 @@ F27: needs F9 (wraps the GCUtil allocation macros)
 F28: standalone (independent mark-stack fix)
 F29: needs F4 (compressed-pointer build flag; changes the allocation ABI)
 F30: needs F15b (same layout for normal and atomic finalized kinds)
+F31: needs F24 and F25 (adjusts their free-list search before collection)
+F32: needs F1, F4, F20 and F26 (typed kinds, header cache and the cage)
+F33: needs F32 (extends its cached marking format and finalization handling)
+F34: needs F24 (adds a guard to its pre-block collection decision)
 ```
 
 ---
@@ -1295,10 +1303,11 @@ TODO: transcribe the actual run numbers into this section.
    Unmap the entire cage on deinitialization. This replaces F4's POSIX
    low-address `MAP_32BIT` / `MAP_FIXED_NOREPLACE` search.
 
-3. **Exact 32-bit roots (`include/gc/gc_mark.h`, `mark.c`):** Add
-   `GC_mark_pair_32bit` and `GC_mark_and_push_32bit()` for known compressed
-   references. Add each offset to the cage base before the usual plausible
-   heap-bound check and mark operation.
+3. **Exact 32-bit roots (`include/gc/gc_mark.h`, `mark.c`):** The historical
+   implementation used `GC_mark_pair_32bit` and `GC_mark_and_push_32bit()`.
+   F33 removes that temporary-pair API. For the current end state, implement
+   F32's shared bitmap descriptors and F33's direct range scanner instead;
+   do not restore the removed public types or functions.
 
 4. **Conservative roots (`mark.c`):** Inspect both halves of each 64-bit
    stack word and Darwin register value. For candidate compressed offsets,
@@ -1432,8 +1441,8 @@ with a direct 16-byte alignment check. On ARM64, verify that the engine and
 collector both enable compressed pointers before comparing Octane and Web
 Tooling Benchmark on the same pinned CPU.
 
-**Reference:** `git diff e3c8edab..HEAD -- include/gc/gc_tiny_fl.h include/private/dbg_mlc.h`
-**Commits:** (this change)
+**Reference:** `git diff e3c8edab..11759e9f -- include/gc/gc_tiny_fl.h include/private/dbg_mlc.h`
+**Commits:** `11759e9f`
 
 ---
 
@@ -1510,8 +1519,207 @@ Tooling Benchmark before and after on the same pinned ARM32 CPU for the native
 32-bit change (and ARM64 for compressed-path changes), recording
 fixed-work average/maximum RSS and CPU frequency with both binaries.
 
-**Reference:** `git log -p -- fnlz_mlc.c include/gc/gc_disclaim.h tests/typed.c`
-**Commits:** (this change)
+**Reference:** `git diff 11759e9f..2ea44640 -- fnlz_mlc.c include/gc/gc_disclaim.h tests/typed.c`
+**Commits:** `cb797222` (compressed layout), `2ea44640` (all pointer modes)
+
+---
+
+## F31. Reuse small free-block size classes before collecting
+
+**Depends on:** F24, F25
+
+### What to do
+
+In `GC_allochblk_from_free_lists()` (`allchblk.c`), retain the existing
+incremental and finalizer-heavy branches which choose their own split limits.
+In the ordinary branch, first obtain `split_limit` from
+`GC_enough_large_bytes_left()`. If both `start_list` and `split_limit` are
+below `UNIQUE_THRESHOLD`, raise `split_limit` to `UNIQUE_THRESHOLD` before
+choosing the mapped/unmapped splitting mode and searching the free lists.
+
+This lets small requests split available blocks in the exact-size classes
+instead of withholding those classes for the large-allocation reserve. Large
+requests still use the reserve policy. Preserve F25's order: free-list search,
+optional coalescing, then collection and the final search.
+
+### Verification
+
+Exercise small requests with reusable free blocks after collection, and
+large requests with the reserve still in effect. Run the existing Escargot
+CI-equivalent suites on Linux i686 and compressed amd64; compare Octane and
+Web Tooling Benchmark with fixed-work RSS on the same pinned ARM CPU.
+
+**Reference:** `git diff 2ea44640..8d5842fd -- allchblk.c`
+**Commits:** `8d5842fd`
+
+---
+
+## F32. Share bitmap descriptors for four-byte heap slots
+
+**Depends on:** F1, F4, F20, F26
+
+### What to do
+
+1. **Public format (`include/gc/gc_typed.h`):** Under
+   `ESCARGOT_USE_32BIT_IN_64BIT`, expose `GC_compressed_bitmap_descr` and the
+   ordinary, enumerable and tagged descriptor constructors, the kind getter,
+   and `GC_malloc_explicitly_typed_compressed()`. Bitmap bit `i` describes
+   four-byte slot `i`, rather than native-word slot `i`. This format is for
+   compressed 64-bit builds; objects must not contain native pointer fields.
+   A zero slot is null. Descriptors become invalid after `GC_deinit()` and
+   must be recreated after initialization. Do not pass these objects to
+   `GC_realloc()` or `GC_reallocf()`.
+
+2. **Shared descriptor and kind (`gc_priv.h`, `typd_mlc.c`):** Store object
+   size, slot count, tagged-slot index, 32-bit tag mask, kind index and copied
+   bitmap words in an atomic uncollectable descriptor. Validate pointer width,
+   nonzero object size, slot bounds, bitmap presence and allocation overflow.
+   A nonzero tag mask must fit in 32 bits and identify a marked bitmap slot.
+   Create a zero-initialized kind with the descriptor as its fixed marking
+   descriptor; enumerable variants enable eager sweep. Typed allocation
+   requires a matching object size and this bitmap kind. Reuse descriptors
+   for the same layout instead of allocating a kind for every object.
+
+3. **Cached marking format (`gc_priv.h`, `allchblk.c`, `gc_pmark.h`):** Add
+   `ok_compressed` to kinds and copy the bitmap format to a block-header flag
+   during header setup. Encode that format in the low bit of mark-stack
+   `mse_start`; leave `mse_descr` holding the shared descriptor. Use the
+   existing header-cache lookup and inline the available mark-stack push,
+   keeping the overflow helper. F33 extends this representation to two
+   non-native formats; apply its final flag values and kind checks afterward.
+
+4. **Bitmap scanning (`mark.c`, `typd_mlc.c`):** Remove the format bit before
+   accessing the payload. Reconstruct each selected pointer using the upper
+   32 bits of the allocation address and its four-byte slot. Clear the tag
+   mask only on the specified tagged slot; ignore zero and odd values, then
+   use the usual plausible-bound and displacement checks. Mask unused bitmap
+   bits without shifting by the word width. Keep the single-word scan inline
+   and move larger bitmaps to `GC_mark_compressed_bitmap_multi()`. Account for
+   marking work and preserve the existing mark-stack overflow behavior.
+
+5. **Weak links and finalization (`gc.h`, `finalize.c`):** Add compressed
+   disappearing-link registration/unregistration and distinguish those links
+   from native links. Clear exactly four bytes, including cleanup after a
+   referent disappears, without overwriting the adjacent field. Normal
+   finalization must push the cached format, and ignore-self finalization must
+   honor the bitmap, tag mask and self-allocation bounds. Keep ordinary weak
+   links on their native-width path.
+
+6. **Explicit free (`malloc.c`):** In compressed builds, keep an explicitly
+   freed small object marked while its block may await lazy reclamation.
+   Otherwise sweep can insert the same object into the free list again.
+   Preserve the clearing and free-list-link rules.
+
+### Verification
+
+Use the existing `tests/typed.c` cases for shared descriptors, masked slots,
+zero/odd values, single- and multi-word bitmap boundaries, compressed weak
+links with adjacent sentinel fields, explicit free/reuse and ignore-self
+finalization. Cover large objects and mark-stack pressure. Run native-pointer
+configurations as well as compressed 64-bit builds; also run the complete
+Escargot suites on i686 and amd64 with matching collector/client headers.
+
+**Reference:** `git diff 8d5842fd..dcf50456`
+**Commits:** `dcf50456`
+
+---
+
+## F33. Scan consecutive four-byte slots directly
+
+**Depends on:** F32
+
+### What to do
+
+1. **Public API and kind (`gc_mark.h`, `misc.c`):** Add `GC_new_kind_32bit()`
+   for zero-initialized consecutive cage-offset slots, using a relocated
+   `GC_DS_LENGTH` descriptor. Allocate through `GC_malloc_kind()` or
+   `GC_generic_malloc()` without debug headers. Add `GC_push_32bit_range()`
+   for a range inside a GC allocation: start and byte count are four-byte
+   aligned, and a zero-length range leaves the stack unchanged. Callers must
+   keep the allocation/range valid through marking.
+
+2. **Format encoding (`gc_priv.h`, `allchblk.c`, `gc_pmark.h`):** Represent
+   `ok_compressed` as 0 for native, 1 for bitmap and 2 for consecutive slots.
+   Reserve header bits `COMPRESSED_BITMAP` (0x40) and `COMPRESSED_POINTERS`
+   (0x80), with a combined format mask. Copy the kind format to the header,
+   and encode it as low bits 1 or 2 of mark-stack `mse_start`. For bitmap
+   objects `mse_descr` remains the shared descriptor; for ranges it is the
+   byte length. Typed bitmap allocation must require format 1 exactly.
+
+3. **Bounded range scan (`mark.c`):** Clear the range format bit and scan
+   four bytes at a time. Reconstruct cage pointers from the allocation/range
+   upper bits, ignore zero and odd slots, and retain normal heap bounds and
+   displacement checking. Limit each pass to `PTRS_TO_BYTES(SPLIT_RANGE_PTRS)`;
+   keep a tagged continuation and remaining byte count on the mark stack for
+   longer ranges. Charge the scanned byte count to marking credit and keep
+   the ordinary push/overflow behavior. Preserve F32's bitmap path.
+
+4. **Other marking paths (`mark.c`, `finalize.c`):** Route reallocation and
+   finalizer marking through the cached format. Ignore-self finalization scans
+   all four-byte slots for the length kind and only selected slots for bitmap
+   kinds, and excludes referents within the object itself. Keep both formats
+   recognizable wherever objects enter the mark stack.
+
+5. **Remove superseded API:** Delete `GC_mark_pair_32bit` and
+   `GC_mark_and_push_32bit()` declarations and implementation, including the
+   old batched temporary-pair path. Consecutive slots need no bitmap,
+   per-object descriptor or client mark callback. F26's historical pair API
+   is not part of the final rebase state.
+
+### Verification
+
+Use the existing `tests/typed.c` cases for length kinds and queued subranges,
+including four-byte boundaries, empty ranges, long scans with continuations,
+reallocation, explicit free and finalization. Keep bitmap coverage from F32.
+Run the full Escargot suites on Linux i686 and compressed amd64, with the
+matching client using direct ranges instead of the removed pair API.
+
+**Reference:** `git diff dcf50456..fb865ca2`
+**Commits:** `fb865ca2`
+
+---
+
+## F34. Respect collection policy at allocation and table-growth triggers
+
+**Depends on:** F24
+
+### What to do
+
+1. **Block-allocation decision (`alloc.c`):** In
+   `GC_should_collect_before_hblk_alloc()`, return false when `GC_dont_gc`
+   is nonzero, alongside the existing incremental and automatic-collection
+   disabling checks. Keep the lock requirement, net-allocation counter,
+   scaled budget and F25/F31 free-list search order.
+
+2. **Weak/finalizer table growth (`finalize.c`):** For the existing large-table,
+   non-incremental pre-growth collection in `GC_grow_table()`, additionally
+   require `!GC_dont_gc && GC_should_collect()`. When the ordinary policy
+   requests collection, retain the existing unlock/collect/relock and retry
+   behavior. Otherwise grow the table using its normal allocation path.
+   Capacity pressure can include stale weak registrations, but occupancy
+   alone does not establish that a collection can reclaim them. Metadata
+   allocation still contributes to the ordinary collection budget.
+
+3. **Keep heap-growth policy:** Do not add a recent-collection cooldown,
+   first-growth allowance or blacklist-scan skip to `GC_should_collect()`
+   or the heap-expansion bookkeeping. Heap growth can make a collection
+   necessary even when the ordinary byte budget has not been reached.
+   Preserve `GC_last_heap_growth_gc_no` updates. Such deferral experiments
+   are excluded from the accepted change because they increased measured
+   RSS; they must not be reintroduced as part of this rebase feature.
+
+### Verification
+
+Use existing tests to cover disabled/incremental collection and table growth
+with both live and dead weak registrations. Confirm cleanup still follows
+ordinary collections and that an adjacent compressed weak field is intact.
+Run the complete Linux i686 and amd64 Escargot CI-equivalent suites. Keep
+GC diagnostics separate from score runs; compare Octane and Web Tooling
+Benchmark on the same pinned ARM CPU with fixed-work average and peak RSS.
+Record the GC start path when evaluating any later heap-growth relaxation.
+
+**Reference:** `git diff fb865ca2..074607a9 -- alloc.c finalize.c`
+**Commits:** `074607a9`
 
 ---
 
@@ -1536,16 +1744,16 @@ reflected in current upstream bdwgc, so skip them entirely:
   the key to become a plain global plus a separate "created" flag.
 - **F11 multi-thread/dlopen test**: see F11 Verification — nothing in `tests/`
   exercises the TLS offset probe.
-- **`test.sh`** (the actual test suite): not yet run — only manual clang
-  compile+link+smoke-test verification has been performed. The real CMake
-  build has not been invoked this session either.
+- **Standalone GCutil `test.sh`:** running Escargot's CI-equivalent suites
+  does not substitute for the collector's own standalone test script.
+  Include that separate check in the next upstream-rebase validation.
 
 ---
 
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F30 (in dependency order):
+2. For each feature F1–F34 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
