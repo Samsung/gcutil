@@ -555,7 +555,7 @@ GC_should_collect_before_hblk_alloc(void)
   word budget = MIN_BYTES_SINCE_GC_BEFORE_COLLECT;
 
   GC_ASSERT(I_HOLD_LOCK());
-  if (GC_incremental || GC_disable_automatic_collection)
+  if (GC_dont_gc || GC_incremental || GC_disable_automatic_collection)
     return FALSE;
 
   if (GC_allochblk_collect_divisor != 0) {

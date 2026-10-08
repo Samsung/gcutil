@@ -120,8 +120,16 @@ GC_grow_table(struct hash_chain_entry ***table_ptr, unsigned *log_size_ptr,
    * be deleted by enforcing a collection.  Ignored for small tables.
    * In the incremental mode we skip this optimization, as we want to
    * avoid triggering a full collection whenever possible.
+   *
+   * Table occupancy includes stale weak registrations until GC_finalize
+   * removes them.  Collecting before growth limits metadata growth in such
+   * workloads, but occupancy alone does not show that entries are dead.
+   * Keep the collection when the ordinary policy requests it; otherwise let
+   * the table grow.  Its capacity may grow before cleanup, but the metadata
+   * allocations still count towards the ordinary collection budget.
    */
-  if (log_old_size >= (unsigned)GC_ON_GROW_LOG_SIZE_MIN && !GC_incremental) {
+  if (log_old_size >= (unsigned)GC_ON_GROW_LOG_SIZE_MIN && !GC_incremental
+      && !GC_dont_gc && GC_should_collect()) {
     IF_CANCEL(int cancel_state;)
 
     DISABLE_CANCEL(cancel_state);
