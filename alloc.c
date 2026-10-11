@@ -5,6 +5,8 @@
  * Copyright (c) 1999-2011 Hewlett-Packard Development Company, L.P.
  * Copyright (c) 2008-2025 Ivan Maidanski
  *
+ * Modified in 2026 to return excess free pages without a collection-age delay.
+ *
  * THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY EXPRESSED
  * OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
  *
@@ -1441,8 +1443,22 @@ GC_finish_collection(void)
 
 #ifdef USE_MUNMAP
   if (GC_unmap_threshold > 0    /*< memory unmapping enabled? */
-      && LIKELY(GC_gc_no != 1)) /*< do not unmap during `GC_init` */
-    GC_unmap_old(GC_unmap_threshold);
+      && LIKELY(GC_gc_no != 1)) { /*< do not unmap during `GC_init` */
+    unsigned threshold = GC_unmap_threshold;
+
+    /*
+     * Keep the normal age delay while mapped free storage is small.
+     * Return it without waiting for another collection when it exceeds
+     * the reuse budget.  Coalescing with newly freed blocks otherwise
+     * restarts the age of an old free range.  Scale the budget with
+     * occupied block storage and the existing free-space divisor;
+     * unmapped pages need no further return.
+     */
+    if (GC_large_free_bytes - GC_unmapped_bytes
+        > (GC_heapsize - GC_large_free_bytes) / GC_free_space_divisor)
+      threshold = 0;
+    GC_unmap_old(threshold);
+  }
 
   GC_ASSERT(GC_heapsize >= GC_unmapped_bytes);
 #endif

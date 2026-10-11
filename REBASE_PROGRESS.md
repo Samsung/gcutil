@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F34) is a self-contained **implementation spec**: it describes
+Each feature (F1–F35) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -69,6 +69,7 @@ Step  Feature  Description                          Depends on
 32    F32      Shared four-byte bitmap descriptors   F1, F4, F20, F26
 33    F33      Direct consecutive four-byte scans    F32
 34    F34      Respect GC policy at trigger sites    F24
+35    F35      Return excess mapped free pages       (independent)
 ```
 
 Dependency graph:
@@ -102,6 +103,7 @@ F31: needs F24 and F25 (adjusts their free-list search before collection)
 F32: needs F1, F4, F20 and F26 (typed kinds, header cache and the cage)
 F33: needs F32 (extends its cached marking format and finalization handling)
 F34: needs F24 (adds a guard to its pre-block collection decision)
+F35: standalone (requires upstream USE_MUNMAP support)
 ```
 
 ---
@@ -1723,6 +1725,74 @@ Record the GC start path when evaluating any later heap-growth relaxation.
 
 ---
 
+## F35. Return excess mapped free pages after collection
+
+**Depends on:** upstream `USE_MUNMAP` support; no custom feature dependency
+
+### What to do
+
+1. **Collection finish (`alloc.c`):** Keep the existing unmap pass after
+   `GC_start_reclaim(FALSE)`. Retain the checks that unmapping is enabled
+   (`GC_unmap_threshold > 0`) and that this is not the initialization
+   collection (`GC_gc_no != 1`). Do not add a collection or change the
+   configured threshold globally.
+
+2. **Adaptive age threshold:** Start with `GC_unmap_threshold`. If mapped
+   free block storage, `GC_large_free_bytes - GC_unmapped_bytes`, exceeds
+   occupied block storage, `GC_heapsize - GC_large_free_bytes`, divided by
+   the existing `GC_free_space_divisor`, use age threshold zero for this
+   pass. Otherwise retain the normal collection-age delay. The divisor
+   remains the collector's existing positive policy value.
+
+3. **Return eligible ranges:** Call `GC_unmap_old()` once with that local
+   threshold. Coalescing newly reclaimed blocks otherwise resets old free
+   ranges' age, so fresh blocks can defer page return repeatedly. Threshold
+   zero allows their return in the current collection. This releases all
+   eligible free ranges when the budget is exceeded; it does not leave an
+   exact budget-sized reserve. Preserve the platform alignment and region
+   limits already enforced by the unmap implementation. On Linux this
+   returns physical pages with `MADV_DONTNEED` while retaining reusable
+   virtual address space.
+
+4. **Keep allocation policy:** Do not pad the heap, relax collection
+   triggers, change free-block splitting, or add persistent state/TLS.
+   `GC_heapsize - GC_large_free_bytes` is occupied block storage, including
+   free cells and fragmentation, not a count of live object bytes.
+
+### Engine integration
+
+`GC_get_heap_size()` excludes unmapped pages. Engine heuristics that use it
+to determine a forced-collection threshold or repeat count can therefore
+request more collections after this change, despite unchanged allocation.
+Full reusable heap capacity includes `GC_get_unmapped_bytes()` as well.
+Review native backing-store allocation pressure separately from collector
+allocation counters; native ArrayBuffer bytes are outside the GC heap.
+Do not hide an engine-forced GC increase by inflating collector memory.
+
+### Verification
+
+Use existing `gctest`, `realloc` and `typed` tests. Cover unmapping disabled,
+initialization, mapped free storage below/above budget and allocation reuse
+after page return. Compare full fixed-work Octane and Web Tooling Benchmark
+with average/peak RSS and collection-caller traces; preserve score runs
+separately from GC diagnostics. Recheck native ARM32/64 before generalizing
+local results.
+
+Local native x86-32 Octane, three fresh-process repetitions per condition,
+showed median average RSS 63.114 -> 51.038 MiB (-19.13%) and peak RSS
+112.730 -> 94.055 MiB (-16.57%). A later controlled round reproduced
+average/peak reductions of 16.97%/17.99%. Gameboy collections increased
+1 -> 3 and zlib 1-2 -> 6 with the unchanged engine policy; caller traces
+identified the added events as explicit ArrayBuffer collections, not
+allocator-triggered GC. One full-score pair was 2809 -> 2774 (-1.25%);
+it is not a repeated-score or regression-free result. ARM and Web Tooling
+Benchmark measurements for this feature remain outstanding.
+
+**Reference:** `git diff 50bd4a9d..HEAD -- alloc.c`
+**Commits:** `Return excess mapped free pages after collection` (this change)
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1753,7 +1823,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F34 (in dependency order):
+2. For each feature F1–F35 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
