@@ -168,10 +168,11 @@ ELSEIF (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang") #include GNU, Clan
         SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL} -DHAVE_STRING_H=1 -DHAVE_SYS_STAT_H=1 -DHAVE_SYS_TYPES_H=1 -DHAVE_UNISTD_H=1)
         SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL} -DIGNORE_DYNAMIC_LOADING=1 -DJAVA_FINALIZATION=1 -DMUNMAP_THRESHOLD=1 -DNO_EXECUTE_PERMISSION=1 -DSTDC_HEADERS=1 -DUSE_MMAP=1 -DUSE_MUNMAP=1)
         SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL} -DNO_WARN_HEAP_GROW_WHEN_GC_DISABLED=1 -DDONT_PROTECT_PTRFREE=1)
-        # pthread_getattr_np() is Linux-specific. macOS uses pthread_get_stackaddr_np() instead.
-        # os_dep.c has Darwin-specific handling (lines 1443-1451) which requires these macros unset.
-        IF (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-            SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL} -DHAVE_PTHREAD_GETATTR_NP=1 -DUSE_GET_STACKBASE_FOR_MAIN=1)
+        # Query the current thread's stack on hosted POSIX targets.
+        # gcconfig.h selects the available pthread API; Darwin uses pthread_get_stackaddr_np().
+        # CMake has no built-in Tizen platform module to set UNIX.
+        IF (UNIX OR CMAKE_SYSTEM_NAME STREQUAL "Tizen")
+            SET (GCUTIL_CFLAGS_INTERNAL ${GCUTIL_CFLAGS_INTERNAL} -DUSE_GET_STACKBASE_FOR_MAIN=1)
         ENDIF()
         # Multi-config support: use generator expressions unconditionally -- these
         # work correctly at generate-time for BOTH single-config (Ninja, Makefiles,
