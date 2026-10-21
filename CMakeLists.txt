@@ -345,3 +345,14 @@ ENDIF()
 
 # Use target_include_directories for include paths
 TARGET_INCLUDE_DIRECTORIES(gc-lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+OPTION (GCUTIL_BUILD_UNLOAD_TEST "Build the Linux shared-library unload regression" OFF)
+IF (GCUTIL_BUILD_UNLOAD_TEST AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    ADD_LIBRARY (gc_runtime_unload_test MODULE tests/runtime_unload.cpp)
+    TARGET_LINK_LIBRARIES (gc_runtime_unload_test PRIVATE gc-lib pthread)
+    TARGET_COMPILE_OPTIONS (gc_runtime_unload_test PRIVATE -std=c++11)
+    IF (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        TARGET_COMPILE_OPTIONS (gc-lib PRIVATE -fno-gnu-unique)
+        TARGET_COMPILE_OPTIONS (gc_runtime_unload_test PRIVATE -fno-gnu-unique)
+    ENDIF()
+ENDIF()

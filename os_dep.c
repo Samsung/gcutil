@@ -3388,7 +3388,8 @@ GC_or_pages(page_hash_table pht1, const word *pht2)
 
 #if defined(MPROTECT_VDB) && defined(DARWIN) || defined(UFFDWP_VDB)
 static GC_bool
-create_detached_thread(void *(*start_routine)(void *), void *arg)
+create_background_thread(void *(*start_routine)(void *), void *arg,
+                         pthread_t *joinable_thread)
 {
   int res;
   pthread_t thread;
@@ -3399,7 +3400,8 @@ create_detached_thread(void *(*start_routine)(void *), void *arg)
 
   if (pthread_attr_init(&attr) != 0)
     ABORT("pthread_attr_init failed");
-  if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0)
+  if (joinable_thread == NULL
+      && pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0)
     ABORT("pthread_attr_setdetachedstate failed");
 #  ifndef NO_MARKER_SPECIAL_SIGMASK
   /* Do not steal user-defined signals by the collector thread. */
@@ -3419,6 +3421,8 @@ create_detached_thread(void *(*start_routine)(void *), void *arg)
     WARN("pthread_sigmask restore failed\n", 0);
 #  endif
   (void)pthread_attr_destroy(&attr);
+  if (res == 0 && joinable_thread != NULL)
+    *joinable_thread = thread;
   return 0 == res;
 }
 #endif
@@ -3678,6 +3682,12 @@ STATIC MAY_THREAD_LOCAL GC_bool GC_old_bus_handler_used_si = FALSE;
 #    endif
 #    if !defined(MSWIN32) && !defined(MSWINCE)
 STATIC MAY_THREAD_LOCAL GC_bool GC_old_segv_handler_used_si = FALSE;
+static GC_bool vdb_segv_action_saved;
+static struct sigaction vdb_old_segv_action;
+#      ifdef USE_BUS_SIGACT
+static GC_bool vdb_bus_action_saved;
+static struct sigaction vdb_old_bus_action;
+#      endif
 #    endif
 #  endif /* !DARWIN */
 
@@ -4042,6 +4052,10 @@ GC_dirty_init(void)
       ABORT("Sigaction failed");
   }
 #      endif
+  if (oldact.sa_sigaction != GC_write_fault_handler) {
+    vdb_old_segv_action = oldact;
+    vdb_segv_action_saved = TRUE;
+  }
   if (oldact.sa_flags & SA_SIGINFO) {
     GC_old_segv_handler = oldact.sa_sigaction;
     GC_old_segv_handler_used_si = TRUE;
@@ -4058,6 +4072,10 @@ GC_dirty_init(void)
   }
 #      ifdef USE_BUS_SIGACT
   sigaction(SIGBUS, &act, &oldact);
+  if (oldact.sa_sigaction != GC_write_fault_handler) {
+    vdb_old_bus_action = oldact;
+    vdb_bus_action_saved = TRUE;
+  }
   if ((oldact.sa_flags & SA_SIGINFO) != 0) {
     GC_old_bus_handler = oldact.sa_sigaction;
     GC_old_bus_handler_used_si = TRUE;
@@ -4756,7 +4774,7 @@ GC_soft_read_dirty(GC_bool output_unneeded)
 #  include <sys/syscall.h>
 
 /*
- * The monitor thread is a separate OS thread (see `create_detached_thread()`
+ * The monitor thread is a separate OS thread (see `create_background_thread()`
  * call in `uffdwp_dirty_init()` below); under `GC_THREAD_ISOLATE`, TLS
  * variables (`uffdwp_fd`, `GC_dirty_pages`, `GC_page_size`) resolve to that
  * thread's own (uninitialized) copies, not the owning thread's, so the
@@ -4786,6 +4804,7 @@ typedef struct {
  * blocked syscall itself releases its reference).
  */
 static MAY_THREAD_LOCAL int uffdwp_stop_wfd = -1;
+static MAY_THREAD_LOCAL pthread_t uffdwp_monitor_tid;
 
 /* Open the `userfaultfd` file descriptor. */
 static GC_bool
@@ -5046,7 +5065,8 @@ GC_dirty_init(void)
     ctx->stop_fd = stop_pipe[0];
     ctx->dirty_pages = (word *)GC_dirty_pages;
     ctx->page_size = GC_page_size;
-    if (UNLIKELY(!create_detached_thread(uffdwp_monitor_thread, ctx))) {
+    if (UNLIKELY(!create_background_thread(uffdwp_monitor_thread, ctx,
+                                           &uffdwp_monitor_tid))) {
       WARN("Failed to create userfaultfd monitor thread\n", 0);
       free(ctx);
       close(stop_pipe[0]);
@@ -5068,8 +5088,8 @@ GC_dirty_init(void)
  * would keep blocking in `poll()` on a `userfaultfd` descriptor whose
  * owning thread no longer exists.
  */
-GC_INNER void
-GC_dirty_deinit(void)
+static void
+uffdwp_dirty_deinit(void)
 {
   if (-1 == uffdwp_fd) {
     /* The GC incremental mode is off, or uses `mprotect` instead. */
@@ -5083,6 +5103,9 @@ GC_dirty_deinit(void)
    * so this thread must not close `uffdwp_fd` here.
    */
   close(uffdwp_stop_wfd);
+  /* dlclose must not unmap code or dirty pages still used by this thread. */
+  if (pthread_join(uffdwp_monitor_tid, NULL) != 0)
+    ABORT("failed to join userfaultfd monitor thread");
   uffdwp_stop_wfd = -1;
   uffdwp_fd = -1;
 }
@@ -5140,6 +5163,30 @@ uffdwp_register_heap_lazy(void)
 #  endif
 
 #endif /* UFFDWP_VDB */
+
+#ifndef GC_DISABLE_INCREMENTAL
+GC_INNER void
+GC_dirty_deinit(void)
+{
+#  ifdef UFFDWP_VDB
+  uffdwp_dirty_deinit();
+#  endif
+#  ifdef SOFT_VDB
+  if (clear_refs_fd != -1) {
+    close(clear_refs_fd);
+    clear_refs_fd = -1;
+    close(GC_pagemap_fd);
+    GC_pagemap_fd = -1;
+  }
+#  endif
+#  ifdef PROC_VDB
+  if (GC_proc_fd != -1) {
+    close(GC_proc_fd);
+    GC_proc_fd = -1;
+  }
+#  endif
+}
+#endif
 
 #if defined(MPROTECT_VDB) || defined(UFFDWP_VDB)
 STATIC void
@@ -5863,7 +5910,7 @@ GC_dirty_init(void)
   if (r != KERN_SUCCESS)
     ABORT("task_set_exception_ports failed");
 
-  if (UNLIKELY(!create_detached_thread(GC_mprotect_thread, NULL))) {
+  if (UNLIKELY(!create_background_thread(GC_mprotect_thread, NULL, NULL))) {
     WARN("Cannot turn on GC incremental (failed to create thread)\n", 0);
     /* Restore the old task exception ports. */
     if (GC_old_exc_ports.count > 0) {
@@ -6197,6 +6244,37 @@ GC_get_actual_vdb(void)
 #endif
   return GC_VDB_NONE;
 }
+
+#ifndef GC_DISABLE_INCREMENTAL
+GC_INNER void
+GC_dirty_destroy_for_shared_library_unload(void)
+{
+#  if defined(MPROTECT_VDB) && !defined(DARWIN) && !defined(MSWIN32) \
+      && !defined(MSWINCE)
+  struct sigaction current;
+  if (vdb_segv_action_saved && sigaction(SIGSEGV, NULL, &current) == 0
+      && current.sa_sigaction == GC_write_fault_handler) {
+    if (sigaction(SIGSEGV, &vdb_old_segv_action, NULL) != 0)
+      ABORT("failed to restore SIGSEGV handler for library unload");
+  }
+#    ifdef USE_BUS_SIGACT
+  if (vdb_bus_action_saved && sigaction(SIGBUS, NULL, &current) == 0
+      && current.sa_sigaction == GC_write_fault_handler) {
+    if (sigaction(SIGBUS, &vdb_old_bus_action, NULL) != 0)
+      ABORT("failed to restore SIGBUS handler for library unload");
+  }
+#    endif
+#  elif defined(MPROTECT_VDB) && defined(DARWIN)
+  if (GC_exception_port != MACH_PORT_NULL)
+    ABORT("unloading Mach incremental GC is unsupported");
+#  elif defined(MPROTECT_VDB) && defined(MSWIN32)
+  if (GC_old_segv_handler != NULL) {
+    SetUnhandledExceptionFilter(
+        GC_old_segv_handler == SIG_DFL ? NULL : GC_old_segv_handler);
+  }
+#  endif
+}
+#endif
 
 #ifdef ECOS
 /* Undo `sbrk()` redirection. */

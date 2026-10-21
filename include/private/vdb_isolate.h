@@ -71,6 +71,8 @@ GC_INNER void GC_isolate_vdb_drain_pending(void);
    legitimately write to (or drain a pending page in) its old heap
    sections, so dropping them here is safe, not merely a leak fix. */
 GC_INNER void GC_isolate_vdb_deinit(void);
+/* All isolates must be gone before retiring the containing shared library. */
+GC_INNER void GC_isolate_vdb_destroy_for_shared_library_unload(void);
 
 #else /* !(GC_THREAD_ISOLATE && MPROTECT_VDB) */
 
@@ -102,6 +104,11 @@ GC_isolate_vdb_drain_pending(void)
 
 GC_INLINE void
 GC_isolate_vdb_deinit(void)
+{
+}
+
+GC_INLINE void
+GC_isolate_vdb_destroy_for_shared_library_unload(void)
 {
 }
 

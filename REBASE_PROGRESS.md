@@ -17,7 +17,7 @@ Sibling reference branch: `bdwgc_8_3_pre_main`.
 
 ## How to use this document (next rebase)
 
-Each feature (F1–F35) is a self-contained **implementation spec**: it describes
+Each feature (F1–F36) is a self-contained **implementation spec**: it describes
 what the end state should look like, not a mechanical diff to apply. Upstream
 code will have drifted, so line numbers and surrounding context will differ —
 read the spec, find the equivalent location in the new upstream by content,
@@ -70,6 +70,7 @@ Step  Feature  Description                          Depends on
 33    F33      Direct consecutive four-byte scans    F32
 34    F34      Respect GC policy at trigger sites    F24
 35    F35      Return excess mapped free pages       (independent)
+36    F36      Final shutdown before library unload F10, F11, F12, F13
 ```
 
 Dependency graph:
@@ -104,6 +105,7 @@ F32: needs F1, F4, F20 and F26 (typed kinds, header cache and the cage)
 F33: needs F32 (extends its cached marking format and finalization handling)
 F34: needs F24 (adds a guard to its pre-block collection decision)
 F35: standalone (requires upstream USE_MUNMAP support)
+F36: needs F10-F13 (retires collector, TLS keys, VDB threads and registries)
 ```
 
 ---
@@ -561,16 +563,18 @@ TLS offset cache) for the early-return check.
 
 ### Verification
 - 30-file compile in release+debug × {no flag, BY_ADDRESS, BY_PTHREAD_KEY}, all under GC_THREAD_ISOLATE
-- `readelf -sW` confirms `GC_arrays_instance` / `GC_arrays_pthread_key` land as TLS symbols
+- `readelf -sW` confirms `GC_arrays_instance` is TLS and
+  `GC_arrays_pthread_key` is a plain process-wide global.
 - misc.c must also compile with the NDK cross compilers (`aarch64-linux-android*-clang`,
   `armv7a-linux-androideabi*-clang`), which is what exercises the `__BIONIC__` path.
   Confirm the path is really in the translation unit rather than silently
   preprocessed away: `<ndk-clang> -E ... misc.c | grep -c tls_key_slot_bionic`
   must be non-zero for Android and zero for the host compiler.
-- No test in `tests/` covers this mechanism. A proper one would `dlopen` the
-  collector and have N threads each run `GC_init()` and check they agree on the
-  offset, run on both a TLS_TCB_AT_TP and a TLS_DTV_AT_TP target. Its absence is
-  why the wrong-scan-direction bug on glibc/arm only surfaced on-device.
+- F36's `tests/runtime_unload.py` covers repeated `dlopen` on one live host
+  thread and verifies the key is retired before reload. Concurrent first-use
+  probing still needs a test with N threads each running `GC_init()` and
+  checking the offset on both TLS_TCB_AT_TP and TLS_DTV_AT_TP targets. The
+  wrong-scan-direction bug on glibc/arm originally only surfaced on-device.
 
 **Reference:** `git diff fba57076..425c8c86`
 **Commits:** `65ee07f8` ← `4e50abb8`, `0daf8a4f` ← `434bc574`,
@@ -603,9 +607,13 @@ mprotect-based VDB) and makes it work correctly under `GC_THREAD_ISOLATE`.
    thread-local — the monitor thread would read its own uninitialized copies.
    Fix: create a `uffdwp_monitor_ctx` struct `{ int fd; int stop_fd; word *dirty_pages; size_t page_size; }`,
    heap-allocate it in the owning thread, and pass it through
-   `create_detached_thread()`'s new `void *arg` parameter. The monitor thread
-   copies the values out and frees the context immediately.
-   - `create_detached_thread()`: add `void *arg` parameter, pass to `pthread_create()`.
+   `create_background_thread()`'s `void *arg` parameter. The monitor thread
+   copies the values out and frees the context immediately. F36 replaces the
+   historical `create_detached_thread()` helper with this final form.
+   - `create_background_thread()`: pass `void *arg` to `pthread_create()` and
+     accept a `pthread_t *joinable_thread` output. A non-null output retains a
+     joinable thread; a null output preserves the old detached behavior for
+     callers such as the Darwin monitor.
    - `uffdwp_write_protect()`: add `int fd` parameter, use it instead of the global `uffdwp_fd`.
    - Replace `HBLK_PAGE_ALIGNED()` (which references `GC_page_size`) with
      `PTR_ALIGN_DOWN(addr, page_size)` using the captured page_size.
@@ -622,7 +630,10 @@ mprotect-based VDB) and makes it work correctly under `GC_THREAD_ISOLATE`.
    - Monitor thread: switch from blocking `read()` to `poll()` on both the uffd
      fd and the stop pipe read end. If the stop pipe fires (`POLLHUP`), break
      the loop, close both fds, and exit.
-   - `GC_dirty_deinit()`: closes the pipe write end → wakes `poll()` with `POLLHUP`.
+   - `GC_dirty_deinit()`: delegates to `uffdwp_dirty_deinit()`, which closes
+     the pipe write end to wake `poll()` with `POLLHUP`, then joins the retained
+     `uffdwp_monitor_tid` before returning (F36). Merely requesting shutdown
+     cannot guarantee that a subsequent `dlclose()` will not unmap live code.
    - Only the monitor thread ever closes the real uffd fd (no close race).
 
 5. **`GC_page_size` plain global (gc_priv.h + os_dep.c):**
@@ -1793,6 +1804,93 @@ Benchmark measurements for this feature remain outstanding.
 
 ---
 
+## F36. Final runtime destruction before shared-library unload
+
+**Depends on:** F10, F11, F12 and F13. Preserve F26's conditional cage release
+when compressed pointers are enabled.
+
+### What to do
+
+1. **Explicit public operation (`gc.h` + `misc.c`):** Add
+   `GC_destroy_runtime_for_shared_library_unload()`. The host must finish all
+   collector use and stop all other collector-using threads before calling
+   it, then `dlclose()` the library containing the private collector. The
+   calling host thread may remain alive. Do not detect an embedding library's
+   unload and finalize it automatically, and do not put potentially blocking
+   teardown in a shared-library destructor. This operation does not unload a
+   library or release heap mappings owned by the embedder.
+
+2. **Separate normal and terminal lifetimes (`misc.c`):** Keep `GC_deinit()`
+   as the ordinary per-collector shutdown operation. The new operation calls
+   it, retires the process-wide hooks below, then sets a process-wide terminal
+   flag. Reject another final destruction or any later `GC_init()` before its
+   normal early return. A real unload and fresh load must replace that flag,
+   static/TLS descriptors and cached offsets together; manually clearing an
+   initialization flag cannot make descriptors from the old GC valid again.
+   Escargot must retain the collector during ordinary `Globals::finalize()`
+   and invoke this operation only through its separate
+   `Globals::destroyRuntimeForSharedLibraryUnload()` after all finalization.
+
+3. **Retire the optimization key (`misc.c`):** With
+   `ENABLE_TLS_ACCESS_BY_PTHREAD_KEY`, delete `GC_arrays_pthread_key` only if
+   its offset probe has created the key (`GC_tls_gc_array_offset != 0`). Do
+   this at final library shutdown, never at an individual isolate's
+   `GC_deinit()`, because other isolates can still use the process-wide key.
+   Do not reset `pthread_once()` or permit same-mapping reinitialization.
+
+4. **Complete VDB shutdown (`os_dep.c` + `gc_priv.h`):** Declare and implement
+   `GC_dirty_deinit()` for every incremental configuration. For UFFDWP,
+   retain a joinable monitor thread and close its stop pipe, then join it
+   before clearing the owner's dirty pages or unmapping code. The monitor
+   remains the sole owner that closes the real userfaultfd and pipe read end.
+   For SOFT_VDB, close `clear_refs_fd` and `GC_pagemap_fd`; for PROC_VDB, close
+   `GC_proc_fd`. Clear the corresponding descriptor fields. These resources
+   must be retired even without `GC_THREAD_ISOLATE`.
+
+5. **Retire process-wide fault hooks (`os_dep.c`):** Add
+   `GC_dirty_destroy_for_shared_library_unload()`, called only after all
+   collectors have shut down. Save complete previous POSIX fault actions
+   when installing the mprotect handler. Restore them at final destruction
+   only when the current action still points to our handler; do not overwrite
+   a newer host handler. Preserve SIGBUS handling where configured and the
+   Windows exception-filter path. Mach incremental GC cannot yet retire its
+   exception monitor and must explicitly reject final library shutdown.
+
+6. **Free shared registries (`vdb_isolate.c` + `vdb_isolate.h`):** Add
+   `GC_isolate_vdb_destroy_for_shared_library_unload()`. After the ordinary
+   per-isolate deinitializations, assert the range and pending counts are
+   zero, then free and clear both arrays and capacities. Supply a no-op inline
+   implementation when thread-isolated mprotect VDB is absent. Keep F13's
+   per-isolate cleanup separate from this final process-wide release.
+
+### Verification
+
+The optional Linux target `gc_runtime_unload_test`, enabled only with
+`GCUTIL_BUILD_UNLOAD_TEST=ON`, embeds the collector in a loadable module.
+`python3 tests/runtime_unload.py <module.so>` runs 40 actual unload/reload
+cycles on the live host thread. Cover typed allocations, normal/incremental
+GC, rejection of initialization after final destruction, actual mapping
+removal, native TLS-key reuse, and unchanged FD/thread counts. Alternate the
+incremental request before initialization and assert a VDB is actually active.
+Keep test-only environment manipulation in this optional module; add no
+product debug/test switches. No additional GCutil CI workflow is required.
+
+Local Linux runs passed 40 cycles each with threading disabled, threading
+enabled and pthread-key TLS (120 total), exercising soft-dirty and userfaultfd
+VDB. Escargot's separate integration regression passed 40 cycles each across
+six GCC/Clang, static/shared, full/compressed-pointer and threading variants
+(240 total), including forced mprotect VDB. It verifies JavaScript execution
+and ordinary finalize/reinitialize on the same TID, mapping removal for both
+embedding and engine DSOs, and recovery of fault handlers and resources. The
+existing Escargot C++ suite passed 101 tests. Windows/Darwin execution and a
+standalone run of the collector's full `test.sh` remain unverified locally.
+
+**Reference:** `git diff b6909811..HEAD -- misc.c os_dep.c vdb_isolate.c include/gc/gc.h include/private/gc_priv.h include/private/gcconfig.h include/private/vdb_isolate.h CMakeLists.txt tests/runtime_unload.cpp tests/runtime_unload.py README.md`
+**Commits:** `Add final collector shutdown and shared-library unload rebase rules`
+(this feature; implementation and rebase documentation are kept in one commit).
+
+---
+
 ## Already upstream (no reapply needed)
 
 These historical hashes were cherry-picked into Samsung/gcutil but are already
@@ -1812,8 +1910,11 @@ reflected in current upstream bdwgc, so skip them entirely:
 - **F11 key-index hardening**: create `GC_arrays_pthread_key` from a library
   constructor so the glibc first-level-block limit becomes unreachable. Needs
   the key to become a plain global plus a separate "created" flag.
-- **F11 multi-thread/dlopen test**: see F11 Verification — nothing in `tests/`
-  exercises the TLS offset probe.
+- **F11 concurrent TLS-probe test**: F36 covers single-host-thread
+  unload/reload and key retirement. Concurrent first initialization and
+  TLS_DTV_AT_TP coverage still need the dedicated test described in F11.
+- **F36 Darwin incremental shutdown**: retire the Mach exception monitor
+  before enabling final library destruction for that configuration.
 - **Standalone GCutil `test.sh`:** running Escargot's CI-equivalent suites
   does not substitute for the collector's own standalone test script.
   Include that separate check in the next upstream-rebase validation.
@@ -1823,7 +1924,7 @@ reflected in current upstream bdwgc, so skip them entirely:
 ## Workflow conventions
 
 1. Start from the new upstream base.
-2. For each feature F1–F35 (in dependency order):
+2. For each feature F1–F36 (in dependency order):
    a. Read the "What to do" spec — understand the intent and end state.
    b. Find the equivalent location in the new upstream by content/context
       (not line numbers — they drift).
