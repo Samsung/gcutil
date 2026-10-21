@@ -1,0 +1,21 @@
+name: Runtime unload
+on: [push, pull_request]
+jobs:
+  unload:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - {threading: 'OFF', keys: 'OFF'}
+          - {threading: 'ON', keys: 'OFF'}
+          - {threading: 'ON', keys: 'ON'}
+    steps:
+      - uses: actions/checkout@v6
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb
+      - run: |
+          cmake -S . -B out/unload -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DGCUTIL_BUILD_UNLOAD_TEST=ON \
+            -DGCUTIL_ENABLE_THREADING=${{ matrix.threading }} \
+            -DGCUTIL_ENABLE_TLS_ACCESS_BY_PTHREAD_KEY=${{ matrix.keys }}
+          cmake --build out/unload --target gc_runtime_unload_test --parallel 4
+      - run: xvfb-run -s '-screen 0 1920x1080x24' -a python3 tests/runtime_unload.py out/unload/libgc_runtime_unload_test.so

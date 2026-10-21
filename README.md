@@ -1,5 +1,17 @@
 # Boehm-Demers-Weiser Garbage Collector
 
+Before unloading a library containing a private collector, finalize every user
+and stop all other collector-using threads, then call
+`GC_destroy_runtime_for_shared_library_unload()` before `dlclose()`. The call
+retires dirty-bit resources and process-wide TLS keys and forbids subsequent
+`GC_init()` until the containing library is actually unloaded and loaded again.
+It does not release memory that the embedder owns or unload any library.
+Mach incremental GC cannot yet retire its exception monitor and is rejected.
+
+The Linux unload regression is built with `-DGCUTIL_BUILD_UNLOAD_TEST=ON`.
+Run `python3 tests/runtime_unload.py out/libgc_runtime_unload_test.so` after
+building `gc_runtime_unload_test` in `out/`.
+
 [![Travis-CI build status](https://app.travis-ci.com/bdwgc/bdwgc.svg?branch=master)](https://app.travis-ci.com/github/bdwgc/bdwgc)
 [![AppVeyor CI build status](https://img.shields.io/appveyor/build/bdwgc/bdwgc.svg?branch=master)](https://ci.appveyor.com/project/bdwgc/bdwgc/branch/master)
 [![GitHub Actions build status (autotools build extra)](https://github.com/bdwgc/bdwgc/actions/workflows/autotools-build-extra.yml/badge.svg?event=push)](https://github.com/bdwgc/bdwgc/actions/workflows/autotools-build-extra.yml?query=branch%3Amaster)

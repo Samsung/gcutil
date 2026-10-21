@@ -670,6 +670,18 @@ GC_API int GC_CALL GC_is_init_called(void);
  */
 GC_API void GC_CALL GC_deinit(void);
 
+/*
+ * Final deinitialization before unloading the shared library containing this
+ * private collector. All other collector users must have finalized and exited;
+ * no concurrent collector calls are permitted. In addition to GC_deinit(),
+ * this retires process-wide TLS keys. GC_init() is forbidden afterward until
+ * the library has actually been unloaded and loaded again. Cached descriptors
+ * are invalidated; ordinary finalize/reinitialize cycles must use GC_deinit()
+ * only if all such caches are also rebuilt. Mach incremental GC cannot yet
+ * retire its exception monitor and is rejected by this operation.
+ */
+GC_API void GC_CALL GC_destroy_runtime_for_shared_library_unload(void);
+
 /**
  * General-purpose allocation functions, with roughly `malloc` calling
  * conventions.  The atomic variants promise that no relevant pointers are

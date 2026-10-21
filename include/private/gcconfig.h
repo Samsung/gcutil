@@ -3043,7 +3043,7 @@ EXTERN_C_BEGIN
  * `mmap(PROT_NONE)`, meaning pages are not initially accessible; this is not
  * compatible with `UFFDIO_REGISTER_MODE_WP`.
  */
-/* TODO: `REDIRECT_MALLOC` requires `UNLOCK` in `create_detached_thread`. */
+/* TODO: `REDIRECT_MALLOC` requires `UNLOCK` in `create_background_thread`. */
 /* TODO: Support single-threaded configuration (VDB needs `-lpthread`). */
 #  undef UFFDWP_VDB
 #endif

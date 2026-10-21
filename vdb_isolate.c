@@ -520,4 +520,16 @@ GC_isolate_vdb_deinit(void)
   GC_isolate_mutex_unlock(&pending_lock);
 }
 
+GC_INNER void
+GC_isolate_vdb_destroy_for_shared_library_unload(void)
+{
+  GC_ASSERT(range_count == 0 && pending_count == 0);
+  free(range_registry);
+  range_registry = NULL;
+  range_capacity = 0;
+  free(pending_queue);
+  pending_queue = NULL;
+  pending_capacity = 0;
+}
+
 #endif /* GC_THREAD_ISOLATE && MPROTECT_VDB */

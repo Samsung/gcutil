@@ -1322,11 +1322,16 @@ init_tls_gc_array_offset(void)
 }
 #endif
 
+static GC_bool runtime_destroyed_for_shared_library_unload;
+
 GC_API void GC_CALL
 GC_init(void)
 {
   word initial_heap_sz;
   IF_CANCEL(int cancel_state;)
+
+  if (runtime_destroyed_for_shared_library_unload)
+    ABORT("collector runtime was destroyed for shared library unload");
 
 #if defined(ENABLE_TLS_ACCESS_BY_ADDRESS) \
     || defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
@@ -2031,6 +2036,25 @@ GC_start_mark_threads(void)
 }
 
 #ifndef GC_NO_DEINIT
+GC_API void GC_CALL
+GC_destroy_runtime_for_shared_library_unload(void)
+{
+  if (runtime_destroyed_for_shared_library_unload)
+    ABORT("collector runtime was already destroyed for shared library unload");
+  GC_deinit();
+#  ifndef GC_DISABLE_INCREMENTAL
+  GC_dirty_destroy_for_shared_library_unload();
+#  endif
+  GC_isolate_vdb_destroy_for_shared_library_unload();
+#  if defined(ENABLE_TLS_ACCESS_BY_PTHREAD_KEY)
+  if (GC_tls_gc_array_offset != 0) {
+    if (pthread_key_delete(GC_arrays_pthread_key) != 0)
+      ABORT("failed to delete collector pthread_key");
+  }
+#  endif
+  runtime_destroyed_for_shared_library_unload = TRUE;
+}
+
 GC_API void GC_CALL
 GC_deinit(void)
 {
